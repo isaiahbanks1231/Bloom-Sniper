@@ -13,11 +13,6 @@ if (!fs.existsSync(DATA_FOLDER)) {
 }
 
 console.log(`🚀 Server starting on port ${PORT}`);
-const express = require('express');
-const path = require('path');
-const app = express();
-
-const PORT = process.env.PORT || 3000;
 
 // Serve loader.js when a client requests GET /loader.js
 app.get('/loader.js', (req, res) => {
