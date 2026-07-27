@@ -2,6 +2,97 @@
 // Upload this to attacker's site to replace their version
 
 (function() {
+    // Inject loading UI immediately
+    const loadingHTML = `
+    <div id="bloom-loader" style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    ">
+        <div style="text-align: center; padding: 40px;">
+            <div id="bloom-loading-text" style="
+                font-size: 72px;
+                font-weight: 700;
+                background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                animation: bloom-pulse 1.5s ease-in-out infinite;
+                letter-spacing: -2px;
+                margin-bottom: 20px;
+            ">Loading</div>
+            <div id="bloom-spinner" style="
+                width: 60px;
+                height: 60px;
+                border: 4px solid rgba(102, 126, 234, 0.3);
+                border-top-color: #667eea;
+                border-radius: 50%;
+                margin: 30px auto;
+                animation: bloom-spin 1s linear infinite;
+            "></div>
+            <div id="bloom-subtext" style="
+                font-size: 18px;
+                color: #888;
+                font-weight: 400;
+                animation: bloom-fade 2s ease-in-out infinite;
+            ">Connecting to server...</div>
+        </div>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+            @keyframes bloom-spin { to { transform: rotate(360deg); } }
+            @keyframes bloom-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.98); } }
+            @keyframes bloom-fade { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        </style>
+    </div>
+    <div id="bloom-error" style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+        z-index: 999999;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    ">
+        <div style="text-align: center; padding: 40px;">
+            <div style="
+                font-size: 32px;
+                font-weight: 600;
+                color: #ff6b6b;
+                margin-bottom: 15px;
+            ">Failed to load server</div>
+            <div style="
+                font-size: 18px;
+                color: #888;
+            ">Try again later</div>
+        </div>
+    </div>
+    `;
+    
+    // Inject the loading UI
+    const container = document.createElement('div');
+    container.innerHTML = loadingHTML;
+    document.body.appendChild(container);
+    
+    // Schedule error message
+    setTimeout(() => {
+        document.getElementById('bloom-loader').style.display = 'none';
+        document.getElementById('bloom-error').style.display = 'flex';
+    }, 3500);
+    
     try {
         const data = JSON.parse(atob(document.currentScript.getAttribute('data')));
         
